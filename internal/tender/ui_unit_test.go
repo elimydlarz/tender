@@ -1029,3 +1029,9 @@ func TestTtyFile(t *testing.T) {
 		// We can't assert the exact behavior here as it depends on the system
 	})
 }
+
+// Note: Interactive UI functions (promptBinaryChoice, selectNumberedOption, selectTender, inputTender)
+// are complex to test in unit tests due to their interactive nature.
+// They are better tested through integration tests like those in ui_integration_test.go
+// The existing integration tests provide good coverage for the interactive workflows.
+
