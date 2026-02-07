@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// Test the usage function
+// Usage function tests
 func TestUsage(t *testing.T) {
-	t.Run("prints usage information", func(t *testing.T) {
+	t.Run("when called then displays complete usage guide with all commands", func(t *testing.T) {
 		// Capture stdout
 		oldStdout := os.Stdout
 		r, w, _ := os.Pipe()
@@ -47,9 +47,9 @@ func TestUsage(t *testing.T) {
 	})
 }
 
-// Test the fail function
+// Error handling tests
 func TestFail(t *testing.T) {
-	t.Run("formats error message correctly", func(t *testing.T) {
+	t.Run("when called then formats error message with proper prefix", func(t *testing.T) {
 		// We can't test os.Exit directly, but we can verify the error format
 		testErr := &testError{msg: "test error message"}
 
@@ -77,14 +77,12 @@ func (e *testError) Error() string {
 // But we can test the logic by extracting functions or using integration tests
 
 func TestMainArgumentParsing(t *testing.T) {
-	// This would be better as an integration test, but we can at least
-	// verify that the function exists and has the right signature
+	t.Run("when called then requires integration testing due to os.Exit", func(t *testing.T) {
+		// Main function testing requires integration tests or refactoring because:
+		// 1. main() calls os.Exit which terminates the test process
+		// 2. We need to extract argument parsing logic to test it independently
+		// 3. Alternative approaches include subprocess execution or mocking os.Exit
 
-	// We can't call main() directly because it exits the process
-	// In a real scenario, we'd either:
-	// 1. Extract the argument parsing logic to a testable function
-	// 2. Use integration tests with subprocess execution
-	// 3. Mock os.Exit for testing
-
-	t.Skip("main function testing requires integration tests or refactoring")
+		t.Skip("main function testing requires integration tests or refactoring")
+	})
 }
