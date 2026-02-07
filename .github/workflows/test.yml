@@ -1,0 +1,86 @@
+name: "tender/test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Optional prompt override"
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tender-main
+  cancel-in-progress: false
+
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "test"
+      TENDER_AGENT: "TendTests"
+      TENDER_PROMPT: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install OpenCode
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "tender[bot]"
+          git config user.email "tender[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+
+      - name: Run OpenCode
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          DISPATCH_PROMPT="${{ github.event_name == 'workflow_dispatch' && inputs.prompt || '' }}"
+          if [ -n "${DISPATCH_PROMPT:-}" ]; then
+            opencode run --agent "$TENDER_AGENT" "$DISPATCH_PROMPT"
+          elif [ -n "${TENDER_PROMPT:-}" ]; then
+            opencode run --agent "$TENDER_AGENT" "$TENDER_PROMPT"
+          else
+            opencode run --agent "$TENDER_AGENT"
+          fi
+
+      - name: Commit and push main
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD || echo detached)"
+          AHEAD_COUNT="$(git rev-list --count origin/main..HEAD || echo 0)"
+          if git diff --quiet --ignore-submodules -- && git diff --cached --quiet --ignore-submodules --; then
+            if [ "$CURRENT_BRANCH" != "main" ] || [ "$AHEAD_COUNT" -gt 0 ]; then
+              echo "No working tree changes; pushing existing commits from $CURRENT_BRANCH to main"
+              git pull --rebase origin main
+              git push origin HEAD:main
+              exit 0
+            fi
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add -A
+          git commit -m "tender($TENDER_NAME): autonomous update"
+          git pull --rebase origin main
+          git push origin HEAD:main

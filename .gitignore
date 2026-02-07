@@ -1,0 +1,6 @@
+.gocache/
+.DS_Store
+bin/
+.tender/test-work/
+.tender/act-fixture/
+.tender/npm-cache/

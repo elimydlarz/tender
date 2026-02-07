@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "disabled",
+  "permission": {
+    "*": "allow"
+  },
+  "default_agent": "Build",
+  "agent": {
+    "Build": {
+      "mode": "primary"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@tender/cli",
+  "version": "0.1.0",
+  "description": "Interactive tender CLI launcher",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "tender": "npm/launcher.mjs"
+  },
+  "files": [
+    "npm/launcher.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "tender",
+    "opencode",
+    "github-actions"
+  ],
+  "license": "UNLICENSED"
+}
