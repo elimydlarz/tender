@@ -56,13 +56,14 @@ jobs:
         run: |
           set -euo pipefail
           DISPATCH_PROMPT="${{ github.event_name == 'workflow_dispatch' && inputs.prompt || '' }}"
-          if [ -n "${DISPATCH_PROMPT:-}" ]; then
-            opencode run --agent "$TENDER_AGENT" "$DISPATCH_PROMPT"
-          elif [ -n "${TENDER_PROMPT:-}" ]; then
-            opencode run --agent "$TENDER_AGENT" "$TENDER_PROMPT"
-          else
-            opencode run --agent "$TENDER_AGENT"
+          RUN_PROMPT="${DISPATCH_PROMPT:-}"
+          if [ -z "${RUN_PROMPT}" ]; then
+            RUN_PROMPT="${TENDER_PROMPT:-}"
           fi
+          if [ -z "${RUN_PROMPT}" ]; then
+            RUN_PROMPT="Run the tender task '$TENDER_NAME' for this repository."
+          fi
+          opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
 
       - name: Commit and push main
         shell: bash
