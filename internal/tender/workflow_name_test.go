@@ -755,6 +755,127 @@ jobs:
 			t.Fatalf("expected inferred name 'Build', got %q", tender.Name)
 		}
 	})
+
+	t.Run("parses workflow with both manual and schedule", func(t *testing.T) {
+		content := `name: "tender/hybrid-workflow"
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Optional prompt override"
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "0 9 * * *"
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "hybrid-workflow"
+      TENDER_AGENT: "Build"
+      TENDER_PROMPT: "test prompt"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
+`
+
+		tender, ok := parseTenderWorkflow(content)
+		if !ok {
+			t.Fatal("failed to parse hybrid workflow")
+		}
+
+		if tender.Name != "hybrid-workflow" {
+			t.Fatalf("unexpected name: %q", tender.Name)
+		}
+		if !tender.Manual {
+			t.Fatal("expected manual to be true for hybrid workflow")
+		}
+		if tender.Cron != "0 9 * * *" {
+			t.Fatalf("unexpected cron: %q", tender.Cron)
+		}
+	})
+
+	t.Run("handles workflow with no TENDER_PROMPT env var", func(t *testing.T) {
+		content := `name: "tender/missing-prompt"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "missing-prompt"
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT"
+`
+
+		tender, ok := parseTenderWorkflow(content)
+		if !ok {
+			t.Fatal("failed to parse workflow without prompt")
+		}
+
+		if tender.Prompt != "" {
+			t.Fatalf("expected empty prompt, got %q", tender.Prompt)
+		}
+	})
+
+	t.Run("rejects workflow with missing opencode step", func(t *testing.T) {
+		content := `name: "tender/test-workflow"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Do something else
+        run: echo "not opencode"
+`
+
+		_, ok := parseTenderWorkflow(content)
+		if ok {
+			t.Fatal("should reject workflow without opencode step")
+		}
+	})
+
+	t.Run("rejects workflow with no jobs", func(t *testing.T) {
+		content := `name: "tender/no-jobs"
+on:
+  workflow_dispatch:
+`
+
+		_, ok := parseTenderWorkflow(content)
+		if ok {
+			t.Fatal("should reject workflow with no jobs")
+		}
+	})
+
+	t.Run("parses workflow regardless of job name (current implementation)", func(t *testing.T) {
+		content := `name: "tender/wrong-job"
+on:
+  workflow_dispatch:
+jobs:
+  not-tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT"
+`
+
+		tender, ok := parseTenderWorkflow(content)
+		if !ok {
+			t.Fatal("should parse workflow with opencode run regardless of job name")
+		}
+
+		if tender.Name != "wrong-job" {
+			t.Fatalf("expected name 'wrong-job', got %q", tender.Name)
+		}
+	})
 }
 
 func TestValidateTender(t *testing.T) {
@@ -880,6 +1001,78 @@ func TestValidateTender(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "enable manual or set a schedule") {
 			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("rejects name with carriage return", func(t *testing.T) {
+		tender := Tender{
+			Name:   "bad\rname",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := ValidateTender(tender)
+		if err == nil {
+			t.Fatal("expected validation error for name with carriage return")
+		}
+		if !strings.Contains(err.Error(), "name cannot contain newlines") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("accepts name with tab (current implementation)", func(t *testing.T) {
+		tender := Tender{
+			Name:   "bad\tname",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := ValidateTender(tender)
+		// Current implementation only checks for \r\n, not tabs
+		if err != nil {
+			t.Fatalf("unexpected validation error for name with tab: %v", err)
+		}
+	})
+
+	t.Run("accepts name with backslash (current implementation)", func(t *testing.T) {
+		tender := Tender{
+			Name:   "bad\\name",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := ValidateTender(tender)
+		// Current implementation only checks for forward slash, not backslash
+		if err != nil {
+			t.Fatalf("unexpected validation error for name with backslash: %v", err)
+		}
+	})
+
+	t.Run("accepts name with leading/trailing whitespace (trims it)", func(t *testing.T) {
+		tender := Tender{
+			Name:   "  spaced-name  ",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := ValidateTender(tender)
+		// Current implementation trims whitespace before validation
+		if err != nil {
+			t.Fatalf("unexpected validation error for name with leading/trailing whitespace: %v", err)
+		}
+	})
+
+	t.Run("accepts hybrid tender with both manual and schedule", func(t *testing.T) {
+		tender := Tender{
+			Name:   "hybrid-tender",
+			Agent:  "Build",
+			Cron:   "0 9 * * *",
+			Manual: true,
+		}
+
+		err := ValidateTender(tender)
+		if err != nil {
+			t.Fatalf("valid hybrid tender rejected: %v", err)
 		}
 	})
 }
@@ -1223,6 +1416,185 @@ func TestFindUnusedWorkflowName(t *testing.T) {
 		}
 		if name != "test-with-spaces.yml" {
 			t.Fatalf("expected 'test-with-spaces.yml', got %q", name)
+		}
+	})
+}
+
+// Error handling tests
+
+func TestWorkflowErrorHandling(t *testing.T) {
+	t.Run("when saving to read-only directory", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// Make workflow directory read-only
+		workflowDir := filepath.Join(root, WorkflowDir)
+		if err := os.Chmod(workflowDir, 0o444); err != nil {
+			t.Fatalf("failed to make directory read-only: %v", err)
+		}
+		defer func() {
+			_ = os.Chmod(workflowDir, 0o755) // Restore permissions for cleanup
+		}()
+
+		tender := Tender{
+			Name:   "test-tender",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := SaveTender(root, tender)
+		if err == nil {
+			t.Fatal("expected error when saving to read-only directory")
+		}
+	})
+
+	t.Run("when loading from corrupted directory", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// Create an unreadable file
+		workflowPath := filepath.Join(root, WorkflowDir, "unreadable.yml")
+		if err := os.WriteFile(workflowPath, []byte("content"), 0o644); err != nil {
+			t.Fatalf("failed to create workflow file: %v", err)
+		}
+
+		// Make the file unreadable
+		if err := os.Chmod(workflowPath, 0o000); err != nil {
+			t.Fatalf("failed to make file unreadable: %v", err)
+		}
+		defer func() {
+			_ = os.Chmod(workflowPath, 0o644) // Restore permissions for cleanup
+		}()
+
+		// LoadTenders returns an error when it can't read files
+		tenders, err := LoadTenders(root)
+		if err == nil {
+			t.Fatal("expected error when loading unreadable files")
+		}
+		// Should still return empty list on error
+		if len(tenders) != 0 {
+			t.Fatalf("expected empty list when files are unreadable, got %d tenders", len(tenders))
+		}
+	})
+
+	t.Run("when removing non-existent workflow file", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// Try to remove tender that doesn't exist
+		err := RemoveTender(root, "ghost-tender")
+		// This should return an error
+		if err == nil {
+			t.Fatal("expected error when removing non-existent tender")
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected 'not found' error, got: %v", err)
+		}
+	})
+
+	t.Run("when scanning malformed YAML file", func(t *testing.T) {
+		root := t.TempDir()
+
+		// Create a malformed YAML file
+		workflowPath := filepath.Join(root, "malformed.yml")
+		malformedContent := `name: "tender/test"
+on:
+  workflow_dispatch:
+invalid yaml: [unclosed bracket
+jobs:`
+		if err := os.WriteFile(workflowPath, []byte(malformedContent), 0o644); err != nil {
+			t.Fatalf("failed to create malformed workflow: %v", err)
+		}
+
+		has, err := ScanWorkflowHasTender(workflowPath)
+		// Should handle malformed YAML gracefully
+		// The function might return (false, nil) if it can't parse, or an error
+		if err == nil && has {
+			t.Fatal("should not detect tender in malformed file")
+		}
+		// Either error or false is acceptable
+	})
+}
+
+func TestEdgeCaseHandling(t *testing.T) {
+	t.Run("when workflow filename contains special characters", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		tender := Tender{
+			Name:         "test@#$%",
+			Agent:        "Build",
+			Manual:       true,
+			WorkflowFile: "special-chars.yml",
+		}
+
+		// Save should handle the name by slugifying it
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with special chars: %v", err)
+		}
+
+		// Load and verify it was saved correctly
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("failed to load tenders: %v", err)
+		}
+		if len(tenders) != 1 {
+			t.Fatalf("expected 1 tender, got %d", len(tenders))
+		}
+	})
+
+	t.Run("when agent name contains spaces", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		tender := Tender{
+			Name:   "test-tender",
+			Agent:  "Build Agent",
+			Manual: true,
+		}
+
+		// Should accept agent names with spaces
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with spaced agent: %v", err)
+		}
+
+		// Load and verify
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("failed to load tenders: %v", err)
+		}
+		if len(tenders) != 1 {
+			t.Fatalf("expected 1 tender, got %d", len(tenders))
+		}
+		if tenders[0].Agent != "Build Agent" {
+			t.Fatalf("expected agent 'Build Agent', got %q", tenders[0].Agent)
+		}
+	})
+
+	t.Run("when cron expression has unusual values", func(t *testing.T) {
+		tender := Tender{
+			Name:   "unusual-cron",
+			Agent:  "Build",
+			Cron:   "*/15 * * * *", // Every 15 minutes
+			Manual: false,
+		}
+
+		// Should accept valid cron expressions
+		err := ValidateTender(tender)
+		if err != nil {
+			t.Fatalf("valid cron expression rejected: %v", err)
 		}
 	})
 }
