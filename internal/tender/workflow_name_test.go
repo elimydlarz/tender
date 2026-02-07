@@ -8,6 +8,17 @@ import (
 )
 
 // workflow.go tests
+//
+// This file contains comprehensive tests for the workflow management functionality.
+// Tests are organized into logical sections:
+// 1. Directory and file management tests
+// 2. Tender lifecycle tests (create, read, update, delete)
+// 3. Workflow rendering and parsing tests
+// 4. Validation and error handling tests
+// 5. Utility function tests
+// 6. Edge case and error recovery tests
+
+// === Directory and File Management Tests ===
 
 func TestEnsureWorkflowDir(t *testing.T) {
 	t.Run("creates new directory", func(t *testing.T) {
@@ -38,6 +49,8 @@ func TestEnsureWorkflowDir(t *testing.T) {
 		}
 	})
 }
+
+// === Tender Lifecycle Tests ===
 
 func TestLoadTenders(t *testing.T) {
 	t.Run("empty directory returns empty list", func(t *testing.T) {
@@ -168,6 +181,8 @@ jobs:
 	})
 }
 
+// === Tender Creation and Persistence Tests ===
+
 func TestSaveTender(t *testing.T) {
 	t.Run("saves new tender with generated filename", func(t *testing.T) {
 		root := t.TempDir()
@@ -266,6 +281,8 @@ func TestSaveTender(t *testing.T) {
 		}
 	})
 }
+
+// === Tender Management Tests ===
 
 func TestSaveNewTender(t *testing.T) {
 	t.Run("saves new tender successfully", func(t *testing.T) {
@@ -1048,6 +1065,96 @@ func TestValidateTender(t *testing.T) {
 				t.Fatalf("unexpected error message: %v", err)
 			}
 		})
+
+		t.Run("rejects cron with too few fields", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "0 9 * *", // Only 4 fields
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for incomplete cron")
+			}
+			if !strings.Contains(err.Error(), "cron must have 5 fields") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
+
+		t.Run("rejects cron with too many fields", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "0 9 * * * extra", // 6 fields
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for extra cron fields")
+			}
+			if !strings.Contains(err.Error(), "cron must have 5 fields") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
+
+		t.Run("accepts cron with non-numeric fields (only validates field count)", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "abc 9 * * *",
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			// Current implementation only validates field count, not content
+			if err != nil {
+				t.Fatalf("unexpected validation error for cron with non-numeric fields: %v", err)
+			}
+		})
+
+		t.Run("accepts agent with whitespace", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "  Build Agent  ",
+				Manual: true,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("unexpected validation error for agent with whitespace: %v", err)
+			}
+		})
+
+		t.Run("accepts cron with valid step values", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "*/15 * * * *", // Valid step notation
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("unexpected validation error for valid step notation: %v", err)
+			}
+		})
+
+		t.Run("accepts cron with range values", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "0 9-17 * * *", // Valid hour range
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("unexpected validation error for valid range: %v", err)
+			}
+		})
 	})
 }
 
@@ -1569,6 +1676,101 @@ func TestEdgeCaseHandling(t *testing.T) {
 		err := ValidateTender(tender)
 		if err != nil {
 			t.Fatalf("valid cron expression rejected: %v", err)
+		}
+	})
+
+	t.Run("when name has leading/trailing whitespace", func(t *testing.T) {
+		root := t.TempDir()
+		tender := Tender{
+			Name:   "  spaced name  ",
+			Agent:  "Build",
+			Manual: true,
+		}
+
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with whitespace: %v", err)
+		}
+
+		// Load and verify whitespace was trimmed
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("failed to load tenders: %v", err)
+		}
+		if len(tenders) != 1 {
+			t.Fatalf("expected 1 tender, got %d", len(tenders))
+		}
+		if tenders[0].Name != "spaced name" {
+			t.Fatalf("expected trimmed name 'spaced name', got %q", tenders[0].Name)
+		}
+	})
+
+	t.Run("when prompt contains special characters", func(t *testing.T) {
+		root := t.TempDir()
+		tender := Tender{
+			Name:   "test",
+			Agent:  "Build",
+			Prompt: "Test with quotes: \"hello\" and 'world'",
+			Manual: true,
+		}
+
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with special prompt: %v", err)
+		}
+
+		// Verify prompt is preserved in workflow (check for quoted version)
+		workflowPath := filepath.Join(root, WorkflowDir, "test.yml")
+		content, err := os.ReadFile(workflowPath)
+		if err != nil {
+			t.Fatalf("failed to read workflow: %v", err)
+		}
+		workflowText := string(content)
+		// The prompt gets quoted in YAML, so check for the quoted version
+		if !strings.Contains(workflowText, `TENDER_PROMPT: "Test with quotes: \"hello\" and 'world'"`) {
+			t.Fatalf("prompt with special characters not preserved. Got:\n%s", workflowText)
+		}
+	})
+
+	t.Run("when workflow file has no extension", func(t *testing.T) {
+		root := t.TempDir()
+		tender := Tender{
+			Name:         "test",
+			Agent:        "Build",
+			Manual:       true,
+			WorkflowFile: "no-ext",
+		}
+
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with no extension: %v", err)
+		}
+
+		// Should add .yml extension
+		workflowPath := filepath.Join(root, WorkflowDir, "no-ext.yml")
+		if _, err := os.Stat(workflowPath); err != nil {
+			t.Fatalf("expected file with .yml extension: %v", err)
+		}
+	})
+
+	t.Run("when workflow file has .yaml extension", func(t *testing.T) {
+		root := t.TempDir()
+		tender := Tender{
+			Name:         "test",
+			Agent:        "Build",
+			Manual:       true,
+			WorkflowFile: "test.yaml",
+		}
+
+		err := SaveTender(root, tender)
+		if err != nil {
+			t.Fatalf("failed to save tender with .yaml extension: %v", err)
+		}
+
+		// Should preserve .yaml extension
+		workflowPath := filepath.Join(root, WorkflowDir, "test.yaml")
+		if _, err := os.Stat(workflowPath); err != nil {
+			t.Fatalf("expected file with .yaml extension: %v", err)
 		}
 	})
 }

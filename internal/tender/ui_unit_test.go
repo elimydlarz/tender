@@ -11,167 +11,155 @@ import (
 // ui.go tests
 
 func TestBuildHourlyCron(t *testing.T) {
-	t.Run("valid minute input", func(t *testing.T) {
-		got, err := buildHourlyCron("15")
-		if err != nil {
-			t.Fatalf("buildHourlyCron returned error: %v", err)
-		}
-		if got != "15 * * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "valid minute input",
+			input: "15",
+			want:  "15 * * * *",
+		},
+		{
+			name:  "zero minute",
+			input: "0",
+			want:  "0 * * * *",
+		},
+		{
+			name:  "maximum minute",
+			input: "59",
+			want:  "59 * * * *",
+		},
+		{
+			name:    "invalid minute - negative",
+			input:   "-1",
+			wantErr: true,
+			errMsg:  "minute must be 0-59",
+		},
+		{
+			name:    "invalid minute - too high",
+			input:   "60",
+			wantErr: true,
+			errMsg:  "minute must be 0-59",
+		},
+		{
+			name:    "invalid minute - non-numeric",
+			input:   "abc",
+			wantErr: true,
+			errMsg:  "minute must be 0-59",
+		},
+		{
+			name:  "whitespace handling",
+			input: "  30  ",
+			want:  "30 * * * *",
+		},
+	}
 
-	t.Run("zero minute", func(t *testing.T) {
-		got, err := buildHourlyCron("0")
-		if err != nil {
-			t.Fatalf("buildHourlyCron returned error: %v", err)
-		}
-		if got != "0 * * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
-
-	t.Run("maximum minute", func(t *testing.T) {
-		got, err := buildHourlyCron("59")
-		if err != nil {
-			t.Fatalf("buildHourlyCron returned error: %v", err)
-		}
-		if got != "59 * * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
-
-	t.Run("invalid minute - negative", func(t *testing.T) {
-		_, err := buildHourlyCron("-1")
-		if err == nil {
-			t.Fatal("expected error for negative minute")
-		}
-		if !strings.Contains(err.Error(), "minute must be 0-59") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid minute - too high", func(t *testing.T) {
-		_, err := buildHourlyCron("60")
-		if err == nil {
-			t.Fatal("expected error for minute 60")
-		}
-		if !strings.Contains(err.Error(), "minute must be 0-59") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid minute - non-numeric", func(t *testing.T) {
-		_, err := buildHourlyCron("abc")
-		if err == nil {
-			t.Fatal("expected error for non-numeric minute")
-		}
-		if !strings.Contains(err.Error(), "minute must be 0-59") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("whitespace handling", func(t *testing.T) {
-		got, err := buildHourlyCron("  30  ")
-		if err != nil {
-			t.Fatalf("buildHourlyCron returned error: %v", err)
-		}
-		if got != "30 * * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := buildHourlyCron(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(err.Error(), tc.errMsg) {
+					t.Fatalf("expected error containing %q, got %v", tc.errMsg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("buildHourlyCron(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestBuildDailyCron(t *testing.T) {
-	t.Run("valid time input", func(t *testing.T) {
-		got, err := buildDailyCron("09:30")
-		if err != nil {
-			t.Fatalf("buildDailyCron returned error: %v", err)
-		}
-		if got != "30 9 * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "valid time input",
+			input: "09:30",
+			want:  "30 9 * * *",
+		},
+		{
+			name:  "midnight",
+			input: "00:00",
+			want:  "0 0 * * *",
+		},
+		{
+			name:  "end of day",
+			input: "23:59",
+			want:  "59 23 * * *",
+		},
+		{
+			name:    "invalid hour - negative",
+			input:   "-1:00",
+			wantErr: true,
+			errMsg:  "hour must be 0-23",
+		},
+		{
+			name:    "invalid hour - too high",
+			input:   "24:00",
+			wantErr: true,
+			errMsg:  "hour must be 0-23",
+		},
+		{
+			name:    "invalid minute - too high",
+			input:   "12:60",
+			wantErr: true,
+			errMsg:  "minute must be 0-59",
+		},
+		{
+			name:    "invalid format - missing colon",
+			input:   "1230",
+			wantErr: true,
+			errMsg:  "time must be HH:MM",
+		},
+		{
+			name:    "invalid format - extra parts",
+			input:   "12:30:45",
+			wantErr: true,
+			errMsg:  "time must be HH:MM",
+		},
+		{
+			name:  "whitespace handling",
+			input: "  14 :  15  ",
+			want:  "15 14 * * *",
+		},
+	}
 
-	t.Run("midnight", func(t *testing.T) {
-		got, err := buildDailyCron("00:00")
-		if err != nil {
-			t.Fatalf("buildDailyCron returned error: %v", err)
-		}
-		if got != "0 0 * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
-
-	t.Run("end of day", func(t *testing.T) {
-		got, err := buildDailyCron("23:59")
-		if err != nil {
-			t.Fatalf("buildDailyCron returned error: %v", err)
-		}
-		if got != "59 23 * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
-
-	t.Run("invalid hour - negative", func(t *testing.T) {
-		_, err := buildDailyCron("-1:00")
-		if err == nil {
-			t.Fatal("expected error for negative hour")
-		}
-		if !strings.Contains(err.Error(), "hour must be 0-23") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid hour - too high", func(t *testing.T) {
-		_, err := buildDailyCron("24:00")
-		if err == nil {
-			t.Fatal("expected error for hour 24")
-		}
-		if !strings.Contains(err.Error(), "hour must be 0-23") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid minute - too high", func(t *testing.T) {
-		_, err := buildDailyCron("12:60")
-		if err == nil {
-			t.Fatal("expected error for minute 60")
-		}
-		if !strings.Contains(err.Error(), "minute must be 0-59") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid format - missing colon", func(t *testing.T) {
-		_, err := buildDailyCron("1230")
-		if err == nil {
-			t.Fatal("expected error for missing colon")
-		}
-		if !strings.Contains(err.Error(), "time must be HH:MM") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("invalid format - extra parts", func(t *testing.T) {
-		_, err := buildDailyCron("12:30:45")
-		if err == nil {
-			t.Fatal("expected error for extra parts")
-		}
-		if !strings.Contains(err.Error(), "time must be HH:MM") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("whitespace handling", func(t *testing.T) {
-		got, err := buildDailyCron("  14 :  15  ")
-		if err != nil {
-			t.Fatalf("buildDailyCron returned error: %v", err)
-		}
-		if got != "15 14 * * *" {
-			t.Fatalf("unexpected cron: %q", got)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := buildDailyCron(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(err.Error(), tc.errMsg) {
+					t.Fatalf("expected error containing %q, got %v", tc.errMsg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("buildDailyCron(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestBuildWeeklyCron(t *testing.T) {
