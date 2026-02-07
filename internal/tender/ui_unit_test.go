@@ -1034,4 +1034,3 @@ func TestTtyFile(t *testing.T) {
 // are complex to test in unit tests due to their interactive nature.
 // They are better tested through integration tests like those in ui_integration_test.go
 // The existing integration tests provide good coverage for the interactive workflows.
-
