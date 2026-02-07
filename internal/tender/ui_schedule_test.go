@@ -2,7 +2,10 @@ package tender
 
 import "testing"
 
-func TestBuildHourlyCron(t *testing.T) {
+// This file contains basic tests for schedule-related functions.
+// More comprehensive tests are in ui_unit_test.go.
+
+func TestBuildHourlyCron_Basic(t *testing.T) {
 	got, err := buildHourlyCron("15")
 	if err != nil {
 		t.Fatalf("buildHourlyCron returned error: %v", err)
@@ -12,7 +15,7 @@ func TestBuildHourlyCron(t *testing.T) {
 	}
 }
 
-func TestBuildDailyCron(t *testing.T) {
+func TestBuildDailyCron_Basic(t *testing.T) {
 	got, err := buildDailyCron("09:30")
 	if err != nil {
 		t.Fatalf("buildDailyCron returned error: %v", err)
@@ -22,7 +25,7 @@ func TestBuildDailyCron(t *testing.T) {
 	}
 }
 
-func TestScheduleDefaultsFromCron(t *testing.T) {
+func TestScheduleDefaultsFromCron_Basic(t *testing.T) {
 	t.Run("hourly", func(t *testing.T) {
 		got, ok := scheduleDefaultsFromCron("5 * * * *")
 		if !ok {
