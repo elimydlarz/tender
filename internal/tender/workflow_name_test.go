@@ -594,8 +594,9 @@ func TestRenderWorkflow(t *testing.T) {
 }
 
 func TestParseTenderWorkflow(t *testing.T) {
-	t.Run("parses valid manual workflow", func(t *testing.T) {
-		content := `name: "tender/test-workflow"
+	t.Run("when workflow is valid", func(t *testing.T) {
+		t.Run("parses manual workflow with all fields", func(t *testing.T) {
+			content := `name: "tender/test-workflow"
 on:
   workflow_dispatch:
     inputs:
@@ -616,27 +617,27 @@ jobs:
         run: opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
 `
 
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("failed to parse valid workflow")
-		}
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse valid workflow")
+			}
 
-		if tender.Name != "test-workflow" {
-			t.Fatalf("unexpected name: %q", tender.Name)
-		}
-		if tender.Agent != "Build" {
-			t.Fatalf("unexpected agent: %q", tender.Agent)
-		}
-		if tender.Prompt != "test prompt" {
-			t.Fatalf("unexpected prompt: %q", tender.Prompt)
-		}
-		if !tender.Manual {
-			t.Fatal("expected manual to be true")
-		}
-	})
+			if tender.Name != "test-workflow" {
+				t.Fatalf("unexpected name: %q", tender.Name)
+			}
+			if tender.Agent != "Build" {
+				t.Fatalf("unexpected agent: %q", tender.Agent)
+			}
+			if tender.Prompt != "test prompt" {
+				t.Fatalf("unexpected prompt: %q", tender.Prompt)
+			}
+			if !tender.Manual {
+				t.Fatal("expected manual to be true")
+			}
+		})
 
-	t.Run("parses valid scheduled workflow", func(t *testing.T) {
-		content := `name: "tender/scheduled-workflow"
+		t.Run("parses scheduled workflow", func(t *testing.T) {
+			content := `name: "tender/scheduled-workflow"
 on:
   schedule:
     - cron: "0 9 * * 1"
@@ -652,112 +653,27 @@ jobs:
         run: opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
 `
 
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("failed to parse valid scheduled workflow")
-		}
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse valid scheduled workflow")
+			}
 
-		if tender.Name != "scheduled-workflow" {
-			t.Fatalf("unexpected name: %q", tender.Name)
-		}
-		if tender.Agent != "Build" {
-			t.Fatalf("unexpected agent: %q", tender.Agent)
-		}
-		if tender.Cron != "0 9 * * 1" {
-			t.Fatalf("unexpected cron: %q", tender.Cron)
-		}
-		if tender.Manual {
-			t.Fatal("expected manual to be false")
-		}
-	})
+			if tender.Name != "scheduled-workflow" {
+				t.Fatalf("unexpected name: %q", tender.Name)
+			}
+			if tender.Agent != "Build" {
+				t.Fatalf("unexpected agent: %q", tender.Agent)
+			}
+			if tender.Cron != "0 9 * * 1" {
+				t.Fatalf("unexpected cron: %q", tender.Cron)
+			}
+			if tender.Manual {
+				t.Fatal("expected manual to be false")
+			}
+		})
 
-	t.Run("rejects workflow without tender name", func(t *testing.T) {
-		content := `name: "other-workflow"
-on:
-  workflow_dispatch:
-jobs:
-  tender:
-    runs-on: ubuntu-latest
-    env:
-      TENDER_AGENT: "Build"
-    steps:
-      - name: Run OpenCode
-        run: opencode run --agent "$TENDER_AGENT"
-`
-
-		_, ok := parseTenderWorkflow(content)
-		if ok {
-			t.Fatal("should reject workflow without tender name")
-		}
-	})
-
-	t.Run("rejects workflow without agent", func(t *testing.T) {
-		content := `name: "tender/test-workflow"
-on:
-  workflow_dispatch:
-jobs:
-  tender:
-    runs-on: ubuntu-latest
-    env:
-      TENDER_NAME: "test-workflow"
-    steps:
-      - name: Run OpenCode
-        run: echo "no agent"
-`
-
-		_, ok := parseTenderWorkflow(content)
-		if ok {
-			t.Fatal("should reject workflow without agent")
-		}
-	})
-
-	t.Run("rejects workflow without opencode run", func(t *testing.T) {
-		content := `name: "tender/test-workflow"
-on:
-  workflow_dispatch:
-jobs:
-  tender:
-    runs-on: ubuntu-latest
-    env:
-      TENDER_NAME: "test-workflow"
-      TENDER_AGENT: "Build"
-    steps:
-      - name: Do something else
-        run: echo "not opencode"
-`
-
-		_, ok := parseTenderWorkflow(content)
-		if ok {
-			t.Fatal("should reject workflow without opencode run")
-		}
-	})
-
-	t.Run("infers name from agent when missing", func(t *testing.T) {
-		content := `name: "tender/"
-on:
-  workflow_dispatch:
-jobs:
-  tender:
-    runs-on: ubuntu-latest
-    env:
-      TENDER_AGENT: "Build"
-    steps:
-      - name: Run OpenCode
-        run: opencode run --agent "$TENDER_AGENT"
-`
-
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("failed to parse workflow with empty name")
-		}
-
-		if tender.Name != "Build" {
-			t.Fatalf("expected inferred name 'Build', got %q", tender.Name)
-		}
-	})
-
-	t.Run("parses workflow with both manual and schedule", func(t *testing.T) {
-		content := `name: "tender/hybrid-workflow"
+		t.Run("parses workflow with both manual and schedule", func(t *testing.T) {
+			content := `name: "tender/hybrid-workflow"
 on:
   workflow_dispatch:
     inputs:
@@ -780,24 +696,113 @@ jobs:
         run: opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
 `
 
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("failed to parse hybrid workflow")
-		}
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse hybrid workflow")
+			}
 
-		if tender.Name != "hybrid-workflow" {
-			t.Fatalf("unexpected name: %q", tender.Name)
-		}
-		if !tender.Manual {
-			t.Fatal("expected manual to be true for hybrid workflow")
-		}
-		if tender.Cron != "0 9 * * *" {
-			t.Fatalf("unexpected cron: %q", tender.Cron)
-		}
+			if tender.Name != "hybrid-workflow" {
+				t.Fatalf("unexpected name: %q", tender.Name)
+			}
+			if !tender.Manual {
+				t.Fatal("expected manual to be true for hybrid workflow")
+			}
+			if tender.Cron != "0 9 * * *" {
+				t.Fatalf("unexpected cron: %q", tender.Cron)
+			}
+		})
+
+		t.Run("infers name from agent when name is empty", func(t *testing.T) {
+			content := `name: "tender/"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT"
+`
+
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse workflow with empty name")
+			}
+
+			if tender.Name != "Build" {
+				t.Fatalf("expected inferred name 'Build', got %q", tender.Name)
+			}
+		})
 	})
 
-	t.Run("handles workflow with no TENDER_PROMPT env var", func(t *testing.T) {
-		content := `name: "tender/missing-prompt"
+	t.Run("when workflow is invalid", func(t *testing.T) {
+		t.Run("rejects workflow without tender name prefix", func(t *testing.T) {
+			content := `name: "other-workflow"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT"
+`
+
+			_, ok := parseTenderWorkflow(content)
+			if ok {
+				t.Fatal("should reject workflow without tender name")
+			}
+		})
+
+		t.Run("rejects workflow without agent", func(t *testing.T) {
+			content := `name: "tender/test-workflow"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "test-workflow"
+    steps:
+      - name: Run OpenCode
+        run: echo "no agent"
+`
+
+			_, ok := parseTenderWorkflow(content)
+			if ok {
+				t.Fatal("should reject workflow without agent")
+			}
+		})
+
+		t.Run("rejects workflow without opencode run", func(t *testing.T) {
+			content := `name: "tender/test-workflow"
+on:
+  workflow_dispatch:
+jobs:
+  tender:
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "test-workflow"
+      TENDER_AGENT: "Build"
+    steps:
+      - name: Do something else
+        run: echo "not opencode"
+`
+
+			_, ok := parseTenderWorkflow(content)
+			if ok {
+				t.Fatal("should reject workflow without opencode run")
+			}
+		})
+	})
+
+	t.Run("when workflow has edge cases", func(t *testing.T) {
+		t.Run("handles workflow with no TENDER_PROMPT env var", func(t *testing.T) {
+			content := `name: "tender/missing-prompt"
 on:
   workflow_dispatch:
 jobs:
@@ -811,50 +816,18 @@ jobs:
         run: opencode run --agent "$TENDER_AGENT"
 `
 
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("failed to parse workflow without prompt")
-		}
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse workflow without prompt")
+			}
 
-		if tender.Prompt != "" {
-			t.Fatalf("expected empty prompt, got %q", tender.Prompt)
-		}
-	})
+			if tender.Prompt != "" {
+				t.Fatalf("expected empty prompt, got %q", tender.Prompt)
+			}
+		})
 
-	t.Run("rejects workflow with missing opencode step", func(t *testing.T) {
-		content := `name: "tender/test-workflow"
-on:
-  workflow_dispatch:
-jobs:
-  tender:
-    runs-on: ubuntu-latest
-    env:
-      TENDER_AGENT: "Build"
-    steps:
-      - name: Do something else
-        run: echo "not opencode"
-`
-
-		_, ok := parseTenderWorkflow(content)
-		if ok {
-			t.Fatal("should reject workflow without opencode step")
-		}
-	})
-
-	t.Run("rejects workflow with no jobs", func(t *testing.T) {
-		content := `name: "tender/no-jobs"
-on:
-  workflow_dispatch:
-`
-
-		_, ok := parseTenderWorkflow(content)
-		if ok {
-			t.Fatal("should reject workflow with no jobs")
-		}
-	})
-
-	t.Run("parses workflow regardless of job name (current implementation)", func(t *testing.T) {
-		content := `name: "tender/wrong-job"
+		t.Run("parses workflow regardless of job name (current implementation)", func(t *testing.T) {
+			content := `name: "tender/wrong-job"
 on:
   workflow_dispatch:
 jobs:
@@ -867,213 +840,214 @@ jobs:
         run: opencode run --agent "$TENDER_AGENT"
 `
 
-		tender, ok := parseTenderWorkflow(content)
-		if !ok {
-			t.Fatal("should parse workflow with opencode run regardless of job name")
-		}
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("should parse workflow with opencode run regardless of job name")
+			}
 
-		if tender.Name != "wrong-job" {
-			t.Fatalf("expected name 'wrong-job', got %q", tender.Name)
-		}
+			if tender.Name != "wrong-job" {
+				t.Fatalf("expected name 'wrong-job', got %q", tender.Name)
+			}
+		})
+	})
+
+	t.Run("when workflow is malformed", func(t *testing.T) {
+		t.Run("rejects workflow with no jobs", func(t *testing.T) {
+			content := `name: "tender/no-jobs"
+on:
+  workflow_dispatch:
+`
+
+			_, ok := parseTenderWorkflow(content)
+			if ok {
+				t.Fatal("should reject workflow with no jobs")
+			}
+		})
 	})
 }
 
 func TestValidateTender(t *testing.T) {
-	t.Run("accepts valid manual tender", func(t *testing.T) {
-		tender := Tender{
-			Name:   "valid-name",
-			Agent:  "Build",
-			Manual: true,
-		}
+	t.Run("when tender is valid", func(t *testing.T) {
+		t.Run("accepts manual tender", func(t *testing.T) {
+			tender := Tender{
+				Name:   "valid-name",
+				Agent:  "Build",
+				Manual: true,
+			}
 
-		err := ValidateTender(tender)
-		if err != nil {
-			t.Fatalf("valid tender rejected: %v", err)
-		}
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("valid tender rejected: %v", err)
+			}
+		})
+
+		t.Run("accepts scheduled tender", func(t *testing.T) {
+			tender := Tender{
+				Name:   "valid-name",
+				Agent:  "Build",
+				Cron:   "0 9 * * *",
+				Manual: false,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("valid scheduled tender rejected: %v", err)
+			}
+		})
+
+		t.Run("accepts hybrid tender with both manual and schedule", func(t *testing.T) {
+			tender := Tender{
+				Name:   "hybrid-tender",
+				Agent:  "Build",
+				Cron:   "0 9 * * *",
+				Manual: true,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("valid hybrid tender rejected: %v", err)
+			}
+		})
+
+		t.Run("accepts name with edge cases (current implementation)", func(t *testing.T) {
+			cases := []struct {
+				name   string
+				reason string
+			}{
+				{"bad\tname", "tabs are not checked"},
+				{"bad\\name", "backslashes are not checked"},
+				{"  spaced-name  ", "whitespace is trimmed"},
+			}
+
+			for _, tc := range cases {
+				t.Run(tc.reason, func(t *testing.T) {
+					tender := Tender{
+						Name:   tc.name,
+						Agent:  "Build",
+						Manual: true,
+					}
+
+					err := ValidateTender(tender)
+					if err != nil {
+						t.Fatalf("unexpected validation error for %q: %v", tc.name, err)
+					}
+				})
+			}
+		})
 	})
 
-	t.Run("accepts valid scheduled tender", func(t *testing.T) {
-		tender := Tender{
-			Name:   "valid-name",
-			Agent:  "Build",
-			Cron:   "0 9 * * *",
-			Manual: false,
-		}
+	t.Run("when tender has invalid name", func(t *testing.T) {
+		t.Run("rejects empty name", func(t *testing.T) {
+			tender := Tender{
+				Name:   "",
+				Agent:  "Build",
+				Manual: true,
+			}
 
-		err := ValidateTender(tender)
-		if err != nil {
-			t.Fatalf("valid scheduled tender rejected: %v", err)
-		}
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for empty name")
+			}
+			if !strings.Contains(err.Error(), "name is required") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
+
+		t.Run("rejects name with newlines", func(t *testing.T) {
+			cases := []struct {
+				name string
+				desc string
+			}{
+				{"bad\nname", "newline character"},
+				{"bad\rname", "carriage return character"},
+			}
+
+			for _, tc := range cases {
+				t.Run(tc.desc, func(t *testing.T) {
+					tender := Tender{
+						Name:   tc.name,
+						Agent:  "Build",
+						Manual: true,
+					}
+
+					err := ValidateTender(tender)
+					if err == nil {
+						t.Fatal("expected validation error for name with newlines")
+					}
+					if !strings.Contains(err.Error(), "name cannot contain newlines") {
+						t.Fatalf("unexpected error message: %v", err)
+					}
+				})
+			}
+		})
+
+		t.Run("rejects name with forward slash", func(t *testing.T) {
+			tender := Tender{
+				Name:   "bad/name",
+				Agent:  "Build",
+				Manual: true,
+			}
+
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for name with slash")
+			}
+			if !strings.Contains(err.Error(), "name cannot contain '/'") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
 	})
 
-	t.Run("rejects empty name", func(t *testing.T) {
-		tender := Tender{
-			Name:   "",
-			Agent:  "Build",
-			Manual: true,
-		}
+	t.Run("when tender has invalid configuration", func(t *testing.T) {
+		t.Run("rejects empty agent", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "",
+				Manual: true,
+			}
 
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for empty name")
-		}
-		if !strings.Contains(err.Error(), "name is required") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for empty agent")
+			}
+			if !strings.Contains(err.Error(), "agent is required") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
 
-	t.Run("rejects empty agent", func(t *testing.T) {
-		tender := Tender{
-			Name:   "test",
-			Agent:  "",
-			Manual: true,
-		}
+		t.Run("rejects invalid cron format", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Cron:   "invalid",
+				Manual: false,
+			}
 
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for empty agent")
-		}
-		if !strings.Contains(err.Error(), "agent is required") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for invalid cron")
+			}
+			if !strings.Contains(err.Error(), "cron must have 5 fields") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
 
-	t.Run("rejects name with newlines", func(t *testing.T) {
-		tender := Tender{
-			Name:   "bad\nname",
-			Agent:  "Build",
-			Manual: true,
-		}
+		t.Run("rejects tender without manual or schedule", func(t *testing.T) {
+			tender := Tender{
+				Name:   "test",
+				Agent:  "Build",
+				Manual: false,
+				Cron:   "",
+			}
 
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for name with newlines")
-		}
-		if !strings.Contains(err.Error(), "name cannot contain newlines") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("rejects name with slash", func(t *testing.T) {
-		tender := Tender{
-			Name:   "bad/name",
-			Agent:  "Build",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for name with slash")
-		}
-		if !strings.Contains(err.Error(), "name cannot contain '/'") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("rejects invalid cron format", func(t *testing.T) {
-		tender := Tender{
-			Name:   "test",
-			Agent:  "Build",
-			Cron:   "invalid",
-			Manual: false,
-		}
-
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for invalid cron")
-		}
-		if !strings.Contains(err.Error(), "cron must have 5 fields") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("rejects tender without manual or schedule", func(t *testing.T) {
-		tender := Tender{
-			Name:   "test",
-			Agent:  "Build",
-			Manual: false,
-			Cron:   "",
-		}
-
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for tender without trigger")
-		}
-		if !strings.Contains(err.Error(), "enable manual or set a schedule") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("rejects name with carriage return", func(t *testing.T) {
-		tender := Tender{
-			Name:   "bad\rname",
-			Agent:  "Build",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		if err == nil {
-			t.Fatal("expected validation error for name with carriage return")
-		}
-		if !strings.Contains(err.Error(), "name cannot contain newlines") {
-			t.Fatalf("unexpected error message: %v", err)
-		}
-	})
-
-	t.Run("accepts name with tab (current implementation)", func(t *testing.T) {
-		tender := Tender{
-			Name:   "bad\tname",
-			Agent:  "Build",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		// Current implementation only checks for \r\n, not tabs
-		if err != nil {
-			t.Fatalf("unexpected validation error for name with tab: %v", err)
-		}
-	})
-
-	t.Run("accepts name with backslash (current implementation)", func(t *testing.T) {
-		tender := Tender{
-			Name:   "bad\\name",
-			Agent:  "Build",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		// Current implementation only checks for forward slash, not backslash
-		if err != nil {
-			t.Fatalf("unexpected validation error for name with backslash: %v", err)
-		}
-	})
-
-	t.Run("accepts name with leading/trailing whitespace (trims it)", func(t *testing.T) {
-		tender := Tender{
-			Name:   "  spaced-name  ",
-			Agent:  "Build",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		// Current implementation trims whitespace before validation
-		if err != nil {
-			t.Fatalf("unexpected validation error for name with leading/trailing whitespace: %v", err)
-		}
-	})
-
-	t.Run("accepts hybrid tender with both manual and schedule", func(t *testing.T) {
-		tender := Tender{
-			Name:   "hybrid-tender",
-			Agent:  "Build",
-			Cron:   "0 9 * * *",
-			Manual: true,
-		}
-
-		err := ValidateTender(tender)
-		if err != nil {
-			t.Fatalf("valid hybrid tender rejected: %v", err)
-		}
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for tender without trigger")
+			}
+			if !strings.Contains(err.Error(), "enable manual or set a schedule") {
+				t.Fatalf("unexpected error message: %v", err)
+			}
+		})
 	})
 }
 
