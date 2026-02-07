@@ -16,12 +16,16 @@ const (
 	cReset   = "\033[0m"
 	cDim     = "\033[2m"
 	cBold    = "\033[1m"
+	cWhite   = "\033[97m"
 	cBlue    = "\033[34m"
 	cCyan    = "\033[36m"
 	cGreen   = "\033[32m"
 	cYellow  = "\033[33m"
 	cRed     = "\033[31m"
 	cMagenta = "\033[35m"
+	cBgBlue  = "\033[44m"
+	cBgCyan  = "\033[46m"
+	cBgMag   = "\033[45m"
 )
 
 func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
@@ -33,6 +37,7 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
+
 		drawHome(stdout, tenders)
 		drawActions(stdout)
 
@@ -51,6 +56,7 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 			if !ok {
 				continue
 			}
+
 			saved, err := SaveNewTender(root, t)
 			if err != nil {
 				printErr(stdout, err.Error())
@@ -119,35 +125,56 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 
 func drawHome(w io.Writer, tenders []Tender) {
 	clearScreen(w)
-	rule(w, '=')
-	fmt.Fprintf(w, "%s%sT E N D E R%s\n", cBold, cBlue, cReset)
-	fmt.Fprintf(w, "%sVisual scheduler for autonomous OpenCode runs%s\n", cDim, cReset)
-	rule(w, '=')
-	fmt.Fprintf(w, "%sState%s  GitHub Actions workflows (.github/workflows)\n", colorLabel(cMagenta), cReset)
-	fmt.Fprintf(w, "%sMode%s   Autonomous commits to main\n", colorLabel(cMagenta), cReset)
-	fmt.Fprintf(w, "%sCount%s  %d managed tender(s)\n", colorLabel(cMagenta), cReset, len(tenders))
+	drawHero(w)
+	fmt.Fprintln(w)
+	drawMeta(w, len(tenders))
 	fmt.Fprintln(w)
 
 	if len(tenders) == 0 {
-		fmt.Fprintf(w, "%sNo managed tender workflows found.%s\n\n", cDim, cReset)
+		fmt.Fprintf(w, "%sNo managed tender workflows found.%s\n", cDim, cReset)
+		fmt.Fprintln(w)
 		return
 	}
 
 	sort.Slice(tenders, func(i, j int) bool { return tenders[i].Name < tenders[j].Name })
+
+	rule(w, '-')
 	fmt.Fprintf(w, "%s%-20s %-18s %-31s %s%s\n", cBold, "Name", "Agent", "Trigger", "Workflow", cReset)
 	rule(w, '-')
 	for _, t := range tenders {
-		fmt.Fprintf(w, "%-20s %-18s %-31s %s\n", t.Name, t.Agent, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
+		trigger := paintTrigger(TriggerSummary(t.Cron, t.Manual), t.Cron, t.Manual)
+		fmt.Fprintf(w, "%-20s %-18s %-31s %s\n", t.Name, t.Agent, trigger, t.WorkflowFile)
 	}
-	fmt.Fprintln(w)
+	rule(w, '-')
+}
+
+func drawHero(w io.Writer) {
+	rule(w, '=')
+	paintBand(w, cBgBlue, " TENDER COMMAND DECK ")
+	fmt.Fprintf(w, "%s%s   _______  _______  _   _  ______   _______  ______ %s\n", cBold, cBlue, cReset)
+	fmt.Fprintf(w, "%s%s  |__   __||__   __|| \\ | ||  _  \\ |  _____||  __  \\\\%s\n", cBold, cBlue, cReset)
+	fmt.Fprintf(w, "%s%s     | |      | |   |  \\| || | | | | |__    | |__) |%s\n", cBold, cCyan, cReset)
+	fmt.Fprintf(w, "%s%s     | |      | |   | . ` || | | | |  __|   |  _  / %s\n", cBold, cCyan, cReset)
+	fmt.Fprintf(w, "%s%s     | |      | |   | |\\  || |_| | | |____  | | \\ \\ %s\n", cBold, cMagenta, cReset)
+	fmt.Fprintf(w, "%s%s     |_|      |_|   |_| \\_||_____/  |______| |_|  \\_\\\\%s\n", cBold, cMagenta, cReset)
+	paintBand(w, cBgCyan, " Autonomous OpenCode scheduler for GitHub Actions ")
+	rule(w, '=')
+}
+
+func drawMeta(w io.Writer, count int) {
+	fmt.Fprintf(w, "%s%s State %s GitHub Actions workflows (.github/workflows)\n", cBgMag, cWhite, cReset)
+	fmt.Fprintf(w, "%s%s Mode  %s Autonomous commits to main\n", cBgMag, cWhite, cReset)
+	fmt.Fprintf(w, "%s%s Count %s %d managed tender(s)\n", cBgMag, cWhite, cReset, count)
 }
 
 func drawActions(w io.Writer) {
-	fmt.Fprintf(w, "%sActions%s\n", colorLabel(cCyan), cReset)
-	fmt.Fprintf(w, "  %s1%s Add tender\n", cBold, cReset)
-	fmt.Fprintf(w, "  %s2%s Edit tender\n", cBold, cReset)
-	fmt.Fprintf(w, "  %s3%s Delete tender\n", cBold, cReset)
-	fmt.Fprintf(w, "  %s4%s Quit\n", cBold, cReset)
+	fmt.Fprintf(w, "%sAction Deck%s\n", colorLabel(cCyan), cReset)
+	rule(w, '.')
+	fmt.Fprintf(w, "  %s1%s  Forge new tender       %s(create workflow)%s\n", cBold, cReset, cDim, cReset)
+	fmt.Fprintf(w, "  %s2%s  Tune existing tender   %s(update schedule/agent)%s\n", cBold, cReset, cDim, cReset)
+	fmt.Fprintf(w, "  %s3%s  Retire tender          %s(delete workflow)%s\n", cBold, cReset, cDim, cReset)
+	fmt.Fprintf(w, "  %s4%s  Exit                   %s(close deck)%s\n", cBold, cReset, cDim, cReset)
+	rule(w, '.')
 }
 
 func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew bool, tty *os.File) (Tender, bool, error) {
@@ -442,15 +469,15 @@ func clearScreen(w io.Writer) {
 }
 
 func acknowledge(r *bufio.Reader, w io.Writer, tty *os.File) {
-	_, _ = selectNumberedOption(r, w, tty, "Continue", []string{"Back"}, 0, false)
+	_, _ = selectNumberedOption(r, w, tty, "Continue", []string{"Back to dashboard"}, 0, false)
 }
 
 func printErr(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%s[ERROR]%s %s\n", cRed, cReset, msg)
+	fmt.Fprintf(w, "%sERROR:%s %s\n", cRed, cReset, msg)
 }
 
 func printOK(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%s[OK]%s %s\n", cGreen, cReset, msg)
+	fmt.Fprintf(w, "%sOK:%s %s\n", cGreen, cReset, msg)
 }
 
 func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty *os.File) (string, error) {
@@ -485,7 +512,7 @@ func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, 
 
 	sort.Slice(tenders, func(i, j int) bool { return tenders[i].Name < tenders[j].Name })
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "%s%s%s\n", colorLabel(cCyan), action+" Tender", cReset)
+	fmt.Fprintf(w, "%s%s Tender%s\n", colorLabel(cCyan), action, cReset)
 	rule(w, '.')
 	for i, t := range tenders {
 		fmt.Fprintf(w, "  %2d) %-20s %-30s %s\n", i+1, t.Name, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
@@ -781,9 +808,26 @@ func nearestQuarterIndex(minute int) int {
 }
 
 func rule(w io.Writer, ch rune) {
-	fmt.Fprintln(w, strings.Repeat(string(ch), 82))
+	fmt.Fprintln(w, strings.Repeat(string(ch), 86))
 }
 
 func colorLabel(color string) string {
 	return color + cBold
+}
+
+func paintBand(w io.Writer, bg string, text string) {
+	fmt.Fprintf(w, "%s%s%s%s%s\n", bg, cWhite, cBold, text, cReset)
+}
+
+func paintTrigger(summary, cron string, manual bool) string {
+	switch {
+	case cron != "" && manual:
+		return cCyan + summary + cReset
+	case cron != "":
+		return cMagenta + summary + cReset
+	case manual:
+		return cGreen + summary + cReset
+	default:
+		return summary
+	}
 }
