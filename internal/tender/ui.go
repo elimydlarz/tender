@@ -147,7 +147,7 @@ func drawHero(w io.Writer) {
 	rule(w, '=')
 	paintBand(w, cBgBlack, cWhite, "                                                                                ")
 	paintBand(w, cBgBlue, cWhite, "                                    TENDER                                      ")
-	paintBand(w, cBgMag, cWhite, "                              VAPORWAVE CONTROL                                 ")
+	paintBand(w, cBgMag, cWhite, "                                                                                ")
 	paintBand(w, cBgPink, cWhite, "                  Autonomous OpenCode runs in GitHub Actions                    ")
 	paintBand(w, cBgBlue, cWhite, "                                                                                ")
 	paintBand(w, cBgBlack, cWhite, "                                                                                ")
