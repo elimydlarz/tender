@@ -14,8 +14,19 @@ import (
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var agentNameRE = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var lineAgentModeRE = regexp.MustCompile(`^([A-Za-z0-9._-]+)\s+\(([^)]+)\)\s*$`)
 
-// DiscoverPrimaryAgents returns primary agents from `opencode agent list`.
+var systemAgentNames = map[string]bool{
+	"build":      true,
+	"summary":    true,
+	"title":      true,
+	"plan":       true,
+	"compaction": true,
+	"explore":    true,
+	"general":    true,
+}
+
+// DiscoverPrimaryAgents returns custom primary agents from `opencode agent list`.
 // No local config parsing fallback is used.
 func DiscoverPrimaryAgents(root string) ([]string, error) {
 	out, err := runOpenCode(root, "agent", "list")
@@ -25,7 +36,7 @@ func DiscoverPrimaryAgents(root string) ([]string, error) {
 
 	agents := parseOpenCodeAgentList(out)
 	if len(agents) == 0 {
-		return nil, fmt.Errorf("opencode agent list returned no usable agents")
+		return nil, fmt.Errorf("opencode agent list returned no custom primary agents")
 	}
 
 	sort.Strings(agents)
@@ -73,19 +84,14 @@ func parseOpenCodeAgentList(out string) []string {
 			strings.HasPrefix(lower, "error:") {
 			continue
 		}
-
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		name, mode, ok := parseTextAgentLine(line)
+		if !ok {
 			continue
 		}
-		first := strings.TrimSpace(fields[0])
-		if strings.EqualFold(first, "name") || strings.EqualFold(first, "agent") {
+		if shouldSkipAgent(name, mode) {
 			continue
 		}
-		if !agentNameRE.MatchString(first) {
-			continue
-		}
-		set[first] = true
+		set[name] = true
 	}
 
 	outList := make([]string, 0, len(set))
@@ -104,18 +110,17 @@ func parseOpenCodeAgentListJSON(text string) []string {
 		for _, item := range arr {
 			switch v := item.(type) {
 			case string:
-				if agentNameRE.MatchString(strings.TrimSpace(v)) {
-					set[strings.TrimSpace(v)] = true
+				name := strings.TrimSpace(v)
+				if !agentNameRE.MatchString(name) || shouldSkipAgent(name, "") {
+					continue
 				}
+				set[name] = true
 			case map[string]interface{}:
-				for _, k := range []string{"name", "agent", "id"} {
-					if raw, ok := v[k]; ok {
-						if s, ok := raw.(string); ok && agentNameRE.MatchString(strings.TrimSpace(s)) {
-							set[strings.TrimSpace(s)] = true
-							break
-						}
-					}
+				name, mode, ok := parseJSONAgentRecord(v)
+				if !ok || shouldSkipAgent(name, mode) {
+					continue
 				}
+				set[name] = true
 			}
 		}
 	}
@@ -130,14 +135,11 @@ func parseOpenCodeAgentListJSON(text string) []string {
 			if arrLike, ok := raw.([]interface{}); ok {
 				for _, item := range arrLike {
 					if v, ok := item.(map[string]interface{}); ok {
-						for _, k := range []string{"name", "agent", "id"} {
-							if rawName, ok := v[k]; ok {
-								if s, ok := rawName.(string); ok && agentNameRE.MatchString(strings.TrimSpace(s)) {
-									set[strings.TrimSpace(s)] = true
-									break
-								}
-							}
+						name, mode, ok := parseJSONAgentRecord(v)
+						if !ok || shouldSkipAgent(name, mode) {
+							continue
 						}
+						set[name] = true
 					}
 				}
 			}
@@ -150,4 +152,90 @@ func parseOpenCodeAgentListJSON(text string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func parseTextAgentLine(line string) (name string, mode string, ok bool) {
+	if line == "" {
+		return "", "", false
+	}
+
+	if m := lineAgentModeRE.FindStringSubmatch(line); len(m) == 3 {
+		n := strings.TrimSpace(m[1])
+		md := normalizeMode(m[2])
+		if strings.EqualFold(n, "name") || strings.EqualFold(n, "agent") {
+			return "", "", false
+		}
+		if !agentNameRE.MatchString(n) {
+			return "", "", false
+		}
+		return n, md, true
+	}
+
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", "", false
+	}
+	n := strings.TrimSpace(fields[0])
+	if strings.EqualFold(n, "name") || strings.EqualFold(n, "agent") {
+		return "", "", false
+	}
+	if !agentNameRE.MatchString(n) {
+		return "", "", false
+	}
+
+	md := ""
+	if len(fields) > 1 {
+		md = normalizeMode(fields[1])
+	}
+	return n, md, true
+}
+
+func parseJSONAgentRecord(v map[string]interface{}) (name string, mode string, ok bool) {
+	var rawName string
+	for _, k := range []string{"name", "agent", "id"} {
+		if raw, has := v[k]; has {
+			if s, ok := raw.(string); ok {
+				rawName = strings.TrimSpace(s)
+				if rawName != "" {
+					break
+				}
+			}
+		}
+	}
+	if rawName == "" || !agentNameRE.MatchString(rawName) {
+		return "", "", false
+	}
+
+	rawMode := ""
+	if raw, has := v["mode"]; has {
+		if s, ok := raw.(string); ok {
+			rawMode = s
+		}
+	}
+	return rawName, normalizeMode(rawMode), true
+}
+
+func normalizeMode(raw string) string {
+	md := strings.TrimSpace(strings.ToLower(raw))
+	md = strings.Trim(md, "()[]{}")
+	return md
+}
+
+func shouldSkipAgent(name string, mode string) bool {
+	if strings.TrimSpace(name) == "" {
+		return true
+	}
+	md := normalizeMode(mode)
+	if md != "" && md != "primary" {
+		return true
+	}
+	return IsSystemAgent(name)
+}
+
+func IsSystemAgent(name string) bool {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return false
+	}
+	return systemAgentNames[strings.ToLower(trimmedName)]
 }

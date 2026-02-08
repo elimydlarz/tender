@@ -10,20 +10,22 @@ Tender keeps state in workflow files only. No sidecar metadata files.
 No install required:
 
 ```bash
-npx --yes @tender/cli@latest
+pnpm dlx @tender/cli@latest
+# or: npx @tender/cli@latest
 ```
 
 Run subcommands the same way:
 
 ```bash
-npx --yes @tender/cli@latest ls
-npx --yes @tender/cli@latest run my-tender
+pnpm dlx @tender/cli@latest ls
+pnpm dlx @tender/cli@latest run my-tender
+# or: npx @tender/cli@latest ls
 ```
 
 ## Quick Start
 
 1. Ensure repo secrets are configured for your OpenCode provider.
-2. Run `npx --yes @tender/cli@latest`.
+2. Run `pnpm dlx @tender/cli@latest` (or `npx @tender/cli@latest`).
 3. Choose `Add tender`.
 4. Enter a name.
 5. Pick agent and schedule.
@@ -67,15 +69,29 @@ token to push commits back to `main`.
 Use these as:
 
 ```bash
-npx --yes @tender/cli@latest <command>
+pnpm dlx @tender/cli@latest <command>
+# or: npx @tender/cli@latest <command>
 ```
 
 - `tender` launches the interactive TUI.
 - `tender init` ensures `.github/workflows` exists.
+- `tender add [--name <name>] --agent <agent> [--prompt "..."] [--cron "..."] [--manual true|false] [--push true|false] [<name>]`
+  creates a tender non-interactively (for coding agents/automation).
+- `tender update <name> [--name <new-name>] [--agent <agent>] [--prompt "..."] [--cron "..."] [--clear-cron] [--manual true|false] [--push true|false]`
+  updates an existing tender non-interactively.
 - `tender ls` lists managed tenders.
 - `tender run [--prompt "..."] <name>` triggers a tender immediately via
   `workflow_dispatch`.
 - `tender rm [--yes] <name>` removes a managed tender.
+- `tender --help` lists commands.
+- `tender help [command]` (or `tender <command> --help`) shows command-specific usage.
+
+Example non-interactive flow:
+
+```bash
+pnpm dlx @tender/cli@latest add --name nightly --agent Build --cron "0 9 * * 1"
+pnpm dlx @tender/cli@latest update nightly --agent TendTests --push true --manual false --clear-cron
+```
 
 ## How It Works
 

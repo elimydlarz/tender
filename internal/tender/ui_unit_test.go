@@ -851,7 +851,7 @@ func TestPrompt(t *testing.T) {
 }
 
 func TestPromptBinaryChoice(t *testing.T) {
-	t.Run("accepts default yes on enter", func(t *testing.T) {
+	t.Run("accepts default yes on enter and shows default hint", func(t *testing.T) {
 		reader := bufio.NewReader(strings.NewReader("\n"))
 		var out bytes.Buffer
 
@@ -862,9 +862,17 @@ func TestPromptBinaryChoice(t *testing.T) {
 		if !got {
 			t.Fatal("expected default yes selection")
 		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if !strings.Contains(clean, "Yes (default)") {
+			t.Fatalf("expected yes default marker in output:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Choose 1-2 (default: 1):") {
+			t.Fatalf("expected default choice hint for yes in output:\n%s", clean)
+		}
 	})
 
-	t.Run("accepts default no on enter", func(t *testing.T) {
+	t.Run("accepts default no on enter and shows default hint", func(t *testing.T) {
 		reader := bufio.NewReader(strings.NewReader("\n"))
 		var out bytes.Buffer
 
@@ -874,6 +882,14 @@ func TestPromptBinaryChoice(t *testing.T) {
 		}
 		if got {
 			t.Fatal("expected default no selection")
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if !strings.Contains(clean, "No (default)") {
+			t.Fatalf("expected no default marker in output:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Choose 1-2 (default: 2):") {
+			t.Fatalf("expected default choice hint for no in output:\n%s", clean)
 		}
 	})
 
@@ -890,6 +906,134 @@ func TestPromptBinaryChoice(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "Selection required.") {
 			t.Fatal("expected selection-required guidance after blank input")
+		}
+	})
+}
+
+func TestSelectNumberedOption(t *testing.T) {
+	t.Run("renders only provided rows for short menus", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("1\n"))
+		var out bytes.Buffer
+
+		_, err := selectNumberedOption(reader, &out, nil, "Menu", []string{"First", "Second"}, 0, true)
+		if err != nil {
+			t.Fatalf("selectNumberedOption returned error: %v", err)
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		lines := strings.Split(clean, "\n")
+		titleIdx := -1
+		firstRuleIdx := -1
+		secondRuleIdx := -1
+		for i, line := range lines {
+			if titleIdx < 0 && strings.TrimSpace(line) == "Menu" {
+				titleIdx = i
+				continue
+			}
+			if titleIdx >= 0 && firstRuleIdx < 0 && strings.HasPrefix(line, strings.Repeat(".", panelWidth)) {
+				firstRuleIdx = i
+				continue
+			}
+			if firstRuleIdx >= 0 && strings.HasPrefix(line, strings.Repeat(".", panelWidth)) {
+				secondRuleIdx = i
+				break
+			}
+		}
+		if titleIdx < 0 || firstRuleIdx < 0 || secondRuleIdx < 0 {
+			t.Fatalf("failed to locate menu section in output:\n%s", clean)
+		}
+
+		section := lines[firstRuleIdx+1 : secondRuleIdx]
+		if len(section) != 2 {
+			t.Fatalf("expected 2 menu rows, got %d", len(section))
+		}
+		nonEmpty := 0
+		for _, line := range section {
+			if strings.TrimSpace(line) != "" {
+				nonEmpty++
+			}
+		}
+		if nonEmpty != 2 {
+			t.Fatalf("expected 2 populated rows, got %d", nonEmpty)
+		}
+	})
+
+	t.Run("pages long lists with 9/0 and selects by visible slot", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("0\n2\n"))
+		var out bytes.Buffer
+		options := []string{
+			"Agent01", "Agent02", "Agent03", "Agent04", "Agent05",
+			"Agent06", "Agent07", "Agent08", "Agent09", "Agent10",
+		}
+
+		got, err := selectNumberedOption(reader, &out, nil, "Agent", options, 0, true)
+		if err != nil {
+			t.Fatalf("selectNumberedOption returned error: %v", err)
+		}
+		if got != 9 {
+			t.Fatalf("expected index 9, got %d", got)
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if !strings.Contains(clean, "Scroll up") || !strings.Contains(clean, "Scroll down") {
+			t.Fatalf("expected paging controls in long-list mode:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Showing 1-8 of 10 (page 1/2)") {
+			t.Fatalf("expected first page summary:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Showing 9-10 of 10 (page 2/2)") {
+			t.Fatalf("expected second page summary:\n%s", clean)
+		}
+		if strings.Contains(clean, "Choose 1-10") {
+			t.Fatalf("did not expect multi-digit selection prompt in single-key mode:\n%s", clean)
+		}
+	})
+
+	t.Run("long-list default works without two-digit default prompt", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("\n"))
+		var out bytes.Buffer
+		options := []string{
+			"Agent01", "Agent02", "Agent03", "Agent04", "Agent05",
+			"Agent06", "Agent07", "Agent08", "Agent09", "Agent10",
+		}
+
+		got, err := selectNumberedOption(reader, &out, nil, "Agent", options, 9, true)
+		if err != nil {
+			t.Fatalf("selectNumberedOption returned error: %v", err)
+		}
+		if got != 9 {
+			t.Fatalf("expected default index 9, got %d", got)
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if !strings.Contains(clean, "Choose 1-8, 9(up), 0(down) (Enter for default):") {
+			t.Fatalf("expected single-key default hint in long-list mode:\n%s", clean)
+		}
+		if strings.Contains(clean, "default: 10") {
+			t.Fatalf("did not expect two-digit default prompt in long-list mode:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Showing 9-10 of 10 (page 2/2)") {
+			t.Fatalf("expected default page to be shown:\n%s", clean)
+		}
+	})
+
+	t.Run("rejects invalid page slot in long-list mode", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("0\n8\n1\n"))
+		var out bytes.Buffer
+		options := []string{
+			"Agent01", "Agent02", "Agent03", "Agent04", "Agent05",
+			"Agent06", "Agent07", "Agent08", "Agent09", "Agent10",
+		}
+
+		got, err := selectNumberedOption(reader, &out, nil, "Agent", options, 0, true)
+		if err != nil {
+			t.Fatalf("selectNumberedOption returned error: %v", err)
+		}
+		if got != 8 {
+			t.Fatalf("expected index 8 after retry, got %d", got)
+		}
+		if !strings.Contains(out.String(), "Invalid selection.") {
+			t.Fatalf("expected invalid-selection feedback, got:\n%s", out.String())
 		}
 	})
 }
@@ -917,6 +1061,10 @@ func TestPrintErr(t *testing.T) {
 	if !strings.Contains(output, msg) {
 		t.Fatal("expected error message in output")
 	}
+	clean := ansiRE.ReplaceAllString(output, "")
+	if !strings.HasPrefix(clean, "  ERROR:") {
+		t.Fatalf("expected aligned error output, got %q", clean)
+	}
 }
 
 func TestPrintOK(t *testing.T) {
@@ -931,6 +1079,10 @@ func TestPrintOK(t *testing.T) {
 	}
 	if !strings.Contains(output, msg) {
 		t.Fatal("expected ok message in output")
+	}
+	clean := ansiRE.ReplaceAllString(output, "")
+	if !strings.HasPrefix(clean, "  OK:") {
+		t.Fatalf("expected aligned ok output, got %q", clean)
 	}
 }
 

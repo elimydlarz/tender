@@ -1,0 +1,6 @@
+[tender/Test/tender] [DEBUG] evaluating expression 'success()'
+[tender/Test/tender] [DEBUG] expression 'success()' evaluated to 'true'
+[tender/Test/tender] 🚀  Start image=catthehacker/ubuntu:act-latest
+[tender/Test/tender]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
+[tender/Test/tender] [DEBUG]   🐳  docker pull catthehacker/ubuntu:act-latest
+[tender/Test/tender] [DEBUG] pulling image 'docker.io/catthehacker/ubuntu:act-latest' (linux/amd64)

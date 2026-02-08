@@ -2,6 +2,9 @@ package tender
 
 import (
 	"bytes"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -59,14 +62,68 @@ func TestRunInteractive(t *testing.T) {
 		}
 	})
 
-	t.Run("quits from create screen", func(t *testing.T) {
+	t.Run("allows q as name and keeps dashboard frame on create screen", func(t *testing.T) {
 		root := t.TempDir()
 		if err := EnsureWorkflowDir(root); err != nil {
 			t.Fatalf("failed to create workflow dir: %v", err)
 		}
 
-		// open create flow, then quit at name prompt
-		stdin := strings.NewReader("1\nq\n")
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+TendTests primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		// create tender named "q" to verify q is treated as data in name entry.
+		stdin := strings.NewReader(strings.Join([]string{
+			"1", // create
+			"q", // name
+			"",  // agent (default TendTests)
+			"",  // push (default no)
+			"2", // recurring schedule: no
+			"q", // exit dashboard
+		}, "\n") + "\n")
+		var stdout bytes.Buffer
+
+		err := RunInteractive(root, stdin, &stdout)
+		if err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("LoadTenders returned error: %v", err)
+		}
+		if len(tenders) != 1 {
+			t.Fatalf("expected one tender after create flow, got %d", len(tenders))
+		}
+		if tenders[0].Name != "q" {
+			t.Fatalf("expected tender name 'q', got %q", tenders[0].Name)
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if strings.Contains(clean, "Back to dashboard") {
+			t.Fatalf("did not expect q-back hint during name entry:\n%s", clean)
+		}
+		if strings.Count(clean, "STATE") < 2 {
+			t.Fatalf("expected dashboard frame to persist between home and create screens:\n%s", clean)
+		}
+		if strings.Count(clean, "Select Tender") < 2 {
+			t.Fatalf("expected return to dashboard after create flow:\n%s", clean)
+		}
+	})
+
+	t.Run("returns to dashboard from continue screen", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// open create flow, submit empty name (shows continue screen), then return and exit.
+		stdin := strings.NewReader("1\n\nq\nq\n")
 		var stdout bytes.Buffer
 
 		err := RunInteractive(root, stdin, &stdout)
@@ -79,22 +136,178 @@ func TestRunInteractive(t *testing.T) {
 			t.Fatalf("LoadTenders returned error: %v", err)
 		}
 		if len(tenders) != 0 {
-			t.Fatalf("expected no tenders after quitting create flow, got %d", len(tenders))
+			t.Fatalf("expected no tenders after leaving continue screen, got %d", len(tenders))
+		}
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if strings.Count(clean, "Select Tender") < 2 {
+			t.Fatalf("expected to return to dashboard after continue screen:\n%s", clean)
 		}
 	})
 
-	t.Run("quits from continue screen", func(t *testing.T) {
+	t.Run("create flow shows default yes for recurring schedule", func(t *testing.T) {
 		root := t.TempDir()
 		if err := EnsureWorkflowDir(root); err != nil {
 			t.Fatalf("failed to create workflow dir: %v", err)
 		}
 
-		// open create flow, submit empty name (shows continue screen), then quit.
-		stdin := strings.NewReader("1\n\nq\n")
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+TendTests primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		stdin := strings.NewReader(strings.Join([]string{
+			"1",          // create
+			"new-tender", // name
+			"",           // agent (default: TendTests)
+			"",           // push (default: no)
+			"",           // recurring schedule (default: yes)
+			"",           // schedule mode (default: daily)
+			"",           // daily time (default: 09:00 UTC)
+			"q",          // exit
+		}, "\n") + "\n")
 		var stdout bytes.Buffer
 
-		err := RunInteractive(root, stdin, &stdout)
-		if err != nil {
+		if err := RunInteractive(root, stdin, &stdout); err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		assertQuestionDefaultChoice(t, clean, "Enable recurring schedule?", 1)
+		if !strings.Contains(clean, "Yes (default)") {
+			t.Fatalf("expected schedule prompt to mark Yes as default:\n%s", clean)
+		}
+	})
+
+	t.Run("create flow does not preview agent before selection", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+TendTests primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		stdin := strings.NewReader(strings.Join([]string{
+			"1",          // create
+			"new-tender", // name
+			"",           // agent (default TendTests)
+			"2",          // push: no
+			"2",          // recurring schedule: no
+			"q",          // exit
+		}, "\n") + "\n")
+		var stdout bytes.Buffer
+
+		if err := RunInteractive(root, stdin, &stdout); err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if !strings.Contains(clean, "Current: name=new-tender") {
+			t.Fatalf("expected create flow to show selected name before agent selection:\n%s", clean)
+		}
+
+		agentHeading := regexp.MustCompile(`(?m)^\s*Agent\s*$`)
+		loc := agentHeading.FindStringIndex(clean)
+		if loc == nil {
+			t.Fatalf("missing agent heading in create flow output:\n%s", clean)
+		}
+		beforeAgent := clean[:loc[0]]
+		if strings.Contains(beforeAgent, "Current: name=new-tender | agent=") {
+			t.Fatalf("agent value was shown before selection:\n%s", clean)
+		}
+	})
+
+	t.Run("edit flow without schedule shows default no for recurring schedule", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+		if _, err := SaveNewTender(root, Tender{
+			Name:   "existing",
+			Agent:  "Build",
+			Manual: true,
+		}); err != nil {
+			t.Fatalf("failed to seed test tender: %v", err)
+		}
+
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+TendTests primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		stdin := strings.NewReader(strings.Join([]string{
+			"2", // open first tender
+			"2", // edit
+			"",  // name (default existing)
+			"",  // agent (default TendTests)
+			"",  // push (default no)
+			"",  // recurring schedule (default no)
+			"1", // back
+			"q", // exit
+		}, "\n") + "\n")
+		var stdout bytes.Buffer
+
+		if err := RunInteractive(root, stdin, &stdout); err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		assertQuestionDefaultChoice(t, clean, "Enable recurring schedule?", 2)
+		if !strings.Contains(clean, "No (default)") {
+			t.Fatalf("expected schedule prompt to mark No as default:\n%s", clean)
+		}
+	})
+
+	t.Run("agent picker supports 9/0 paging for long lists", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+Agent01 primary
+Agent02 primary
+Agent03 primary
+Agent04 primary
+Agent05 primary
+Agent06 primary
+Agent07 primary
+Agent08 primary
+Agent09 primary
+Agent10 primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		stdin := strings.NewReader(strings.Join([]string{
+			"1",            // create
+			"paged-agents", // name
+			"0",            // agent page down
+			"2",            // choose Agent10 (2nd slot on page 2)
+			"",             // push (default no)
+			"2",            // recurring schedule: no
+			"q",            // exit
+		}, "\n") + "\n")
+		var stdout bytes.Buffer
+
+		if err := RunInteractive(root, stdin, &stdout); err != nil {
 			t.Fatalf("RunInteractive returned error: %v", err)
 		}
 
@@ -102,10 +315,37 @@ func TestRunInteractive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadTenders returned error: %v", err)
 		}
-		if len(tenders) != 0 {
-			t.Fatalf("expected no tenders after quitting continue screen, got %d", len(tenders))
+		if len(tenders) != 1 {
+			t.Fatalf("expected one tender after create flow, got %d", len(tenders))
+		}
+		if tenders[0].Agent != "Agent10" {
+			t.Fatalf("expected selected agent Agent10, got %q", tenders[0].Agent)
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if !strings.Contains(clean, "Choose 1-8, 9(up), 0(down) (Enter for default):") {
+			t.Fatalf("expected single-key paged prompt in agent picker:\n%s", clean)
+		}
+		if !strings.Contains(clean, "Showing 1-8 of 10 (page 1/2)") || !strings.Contains(clean, "Showing 9-10 of 10 (page 2/2)") {
+			t.Fatalf("expected paging summaries in agent picker:\n%s", clean)
+		}
+		if strings.Contains(clean, "Choose 1-10") {
+			t.Fatalf("did not expect multi-digit selection prompt:\n%s", clean)
 		}
 	})
+}
+
+func assertQuestionDefaultChoice(t *testing.T, output, question string, defaultChoice int) {
+	t.Helper()
+	start := strings.Index(output, question)
+	if start < 0 {
+		t.Fatalf("missing question %q in output:\n%s", question, output)
+	}
+	segment := output[start:]
+	expected := "Choose 1-2 (default: " + strconv.Itoa(defaultChoice) + "):"
+	if !strings.Contains(segment, expected) {
+		t.Fatalf("missing %q after %q:\n%s", expected, question, segment)
+	}
 }
 
 func TestDrawHome(t *testing.T) {
@@ -121,6 +361,20 @@ func TestDrawHome(t *testing.T) {
 		}
 		if !strings.Contains(output, "Showing 0 tenders") {
 			t.Fatal("expected empty summary")
+		}
+
+		clean := ansiRE.ReplaceAllString(output, "")
+		section := slotSection(clean)
+		if len(section) != rootTenderSlots() {
+			t.Fatalf("expected %d slot rows, got %d", rootTenderSlots(), len(section))
+		}
+		for i, line := range section {
+			if strings.TrimSpace(line) != "" {
+				t.Fatalf("expected blank slot row %d, got %q", i, line)
+			}
+		}
+		if strings.Contains(clean, "(empty)") {
+			t.Fatalf("expected no empty placeholder text:\n%s", clean)
 		}
 	})
 
@@ -143,5 +397,46 @@ func TestDrawHome(t *testing.T) {
 		if !strings.Contains(output, "Showing 1-2 of 2 (page 1/1)") {
 			t.Fatal("expected paging summary")
 		}
+
+		clean := ansiRE.ReplaceAllString(output, "")
+		section := slotSection(clean)
+		if len(section) != rootTenderSlots() {
+			t.Fatalf("expected %d slot rows, got %d", rootTenderSlots(), len(section))
+		}
+		visible := 0
+		blank := 0
+		for _, line := range section {
+			if strings.TrimSpace(line) == "" {
+				blank++
+				continue
+			}
+			visible++
+		}
+		if visible != 2 {
+			t.Fatalf("expected 2 visible slot rows, got %d", visible)
+		}
+		if blank != rootTenderSlots()-2 {
+			t.Fatalf("expected %d blank slot rows, got %d", rootTenderSlots()-2, blank)
+		}
 	})
+}
+
+func slotSection(cleanOutput string) []string {
+	lines := strings.Split(cleanOutput, "\n")
+	createIdx := -1
+	scrollIdx := -1
+	for i, line := range lines {
+		if createIdx < 0 && strings.Contains(line, "Create tender") {
+			createIdx = i
+			continue
+		}
+		if createIdx >= 0 && strings.Contains(line, "Scroll up") {
+			scrollIdx = i
+			break
+		}
+	}
+	if createIdx < 0 || scrollIdx < 0 || scrollIdx <= createIdx+1 {
+		return nil
+	}
+	return lines[createIdx+1 : scrollIdx]
 }

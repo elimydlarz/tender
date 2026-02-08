@@ -35,8 +35,20 @@ function printHelp() {
   process.stdout.write("tender\n\n");
   process.stdout.write("Launcher for the tender CLI.\n\n");
   process.stdout.write("Usage:\n");
-  process.stdout.write("  npx --yes @tender/cli@latest\n");
-  process.stdout.write("  npx --yes @tender/cli@latest <command>\n");
+  process.stdout.write("  pnpm dlx @tender/cli@latest\n");
+  process.stdout.write("  npx @tender/cli@latest <command>\n");
+  process.stdout.write("  npx @tender/cli@latest <command> --help\n\n");
+  process.stdout.write("Commands:\n");
+  process.stdout.write("  init            Ensure .github/workflows exists\n");
+  process.stdout.write("  add             Add a tender non-interactively (agent-friendly)\n");
+  process.stdout.write("  update          Update a tender non-interactively (agent-friendly)\n");
+  process.stdout.write("  ls              List managed tender workflows\n");
+  process.stdout.write("  run             Trigger an on-demand tender now via GitHub CLI\n");
+  process.stdout.write("  rm              Remove a tender workflow\n");
+  process.stdout.write("  help [command]  Show command help\n\n");
+  process.stdout.write("Examples:\n");
+  process.stdout.write("  npx @tender/cli@latest add --name nightly --agent Build --cron \"0 9 * * 1\"\n");
+  process.stdout.write("  npx @tender/cli@latest help add\n");
 }
 
 async function resolveBinaryPath() {

@@ -36,18 +36,18 @@ run: build
 
 npx-local: build
 	@mkdir -p "$(NPM_CACHE_DIR)"
-	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npx --yes .
+	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npm_config_yes=true npx .
 
 npx-smoke: build
 	@mkdir -p "$(NPM_CACHE_DIR)"
-	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npx --yes . --help >/dev/null
-	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npx --yes . --version >/dev/null
+	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npm_config_yes=true npx . --help >/dev/null
+	@TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npm_config_yes=true npx . --version >/dev/null
 
 npx-pack-smoke: build
 	@mkdir -p "$(NPM_CACHE_DIR)"
 	@pkg="$$(npm pack --silent)"; \
-	TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npx --yes "./$$pkg" --help >/dev/null; \
-	TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npx --yes "./$$pkg" --version >/dev/null; \
+	TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npm_config_yes=true npx "./$$pkg" --help >/dev/null; \
+	TENDER_BINARY_PATH="$(BIN)" NPM_CONFIG_CACHE="$(NPM_CACHE_DIR)" npm_config_yes=true npx "./$$pkg" --version >/dev/null; \
 	rm -f "$$pkg"
 
 fmt:

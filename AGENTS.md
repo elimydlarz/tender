@@ -30,7 +30,7 @@ These instructions apply to the entire repository.
   - `./bin/tender run <name>`: trigger a configured tender immediately (requires `gh`)
   - `make npx-smoke`: verify local npm launcher path without publishing
   - `make npx-pack-smoke`: verify packed npm artifact without publishing
-  - `make npx-local`: run interactive CLI through local `npx --yes .`
+  - `make npx-local`: run interactive CLI through local `npx .`
   - `make fmt`: format Go files
   - `make fmt-check`: fail if formatting is not clean
   - `make lint`: run `go vet`
@@ -40,6 +40,9 @@ These instructions apply to the entire repository.
   - `make check`: run full verification (`check-fast + acceptance`)
   - `make publish VERSION=x.y.z`: run checks, bump package version, publish to npm locally, and keep commit/tag local
   - `make release-dry-run VERSION=x.y.z`: same release flow without npm publish
+- Agent completion gate for code changes:
+  - Run `make npx-smoke` and `make check-fast` before marking the task complete.
+  - If launcher packaging behavior changed, also run `make npx-pack-smoke`.
 - Direct commands still supported:
   - Build: `GOCACHE=$PWD/.gocache go build ./...`
   - Unit/default tests: `GOCACHE=$PWD/.gocache go test ./...`

@@ -47,7 +47,7 @@ func TestAcceptanceWorkflowDispatchAndScheduleVisibleInAct(t *testing.T) {
 
 	requiredSnippets := []string{
 		"name: \"tender/weekly-audit\"",
-		"TENDER_AGENT: \"Build\"",
+		"TENDER_AGENT: \"TendTests\"",
 		"TENDER_PROMPT: \"\"",
 		"- cron: \"0 9 * * 1\"",
 		"opencode run --agent \"$TENDER_AGENT\"",
@@ -166,6 +166,57 @@ func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 	}
 }
 
+func TestAcceptanceTTY_AgentPagingUsesSingleKeyScroll(t *testing.T) {
+	ensureBinary(t, "git")
+	ensureBinary(t, "go")
+	ensureBinary(t, "expect")
+
+	fixture := newFixtureRepo(t, "tty-agent-paging")
+	installFakeOpenCodeWithAgents(t, fixture, []string{
+		"Agent01", "Agent02", "Agent03", "Agent04", "Agent05",
+		"Agent06", "Agent07", "Agent08", "Agent09", "Agent10",
+	})
+	cli := buildTenderCLI(t)
+
+	script := strings.Join([]string{
+		"set timeout 20",
+		"spawn " + cli,
+		"expect \"Select Tender\"",
+		"send \"1\\r\"",
+		"expect \"Name:\"",
+		"send \"Paged Agent\\r\"",
+		"expect \"Agent\"",
+		"expect \"Scroll down\"",
+		"expect -re {Choose 1-8, 9\\(up\\), 0\\(down\\).*:}",
+		"send \"0\\r\"",
+		"expect \"Showing 9-10 of 10 (page 2/2)\"",
+		"expect -re {Choose 1-8, 9\\(up\\), 0\\(down\\).*:}",
+		"send \"2\\r\"",
+		"expect \"Run on every push to main?\"",
+		"expect -re {Choose .*:}",
+		"send \"2\\r\"",
+		"expect \"Enable recurring schedule?\"",
+		"expect -re {Choose .*:}",
+		"send \"2\\r\"",
+		"expect \"OK:\"",
+		"expect \"Select Tender\"",
+		"send \"q\\r\"",
+		"expect eof",
+	}, "\n")
+
+	_ = runCmdWithStdin(t, fixture, script, "expect", "-f", "-")
+
+	workflowPath := filepath.Join(fixture, WorkflowDir, "paged-agent.yml")
+	workflowContent, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", workflowPath, err)
+	}
+	text := string(workflowContent)
+	if !strings.Contains(text, `TENDER_AGENT: "Agent10"`) {
+		t.Fatalf("workflow agent selection did not persist paging selection:\n%s", text)
+	}
+}
+
 func newFixtureRepo(t *testing.T, name string) string {
 	t.Helper()
 	root := projectRoot(t)
@@ -244,23 +295,30 @@ func withFixturePath(cmd *exec.Cmd, dir string) {
 
 func installFakeOpenCode(t *testing.T, fixture string) {
 	t.Helper()
+	installFakeOpenCodeWithAgents(t, fixture, []string{"TendTests", "TestReviewer"})
+}
+
+func installFakeOpenCodeWithAgents(t *testing.T, fixture string, agents []string) {
+	t.Helper()
 	binDir := filepath.Join(fixture, ".tender", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll fake opencode dir: %v", err)
 	}
-	script := `#!/bin/sh
-if [ "$1" = "agent" ] && [ "$2" = "list" ]; then
-cat <<'EOF'
-Build primary
-TestReviewer primary
-EOF
-exit 0
-fi
-echo "unsupported fake opencode command: $*" >&2
-exit 1
-`
+	var out strings.Builder
+	out.WriteString("#!/bin/sh\n")
+	out.WriteString("if [ \"$1\" = \"agent\" ] && [ \"$2\" = \"list\" ]; then\n")
+	out.WriteString("cat <<'EOF'\n")
+	for _, agent := range agents {
+		out.WriteString(agent)
+		out.WriteString(" primary\n")
+	}
+	out.WriteString("EOF\n")
+	out.WriteString("exit 0\n")
+	out.WriteString("fi\n")
+	out.WriteString("echo \"unsupported fake opencode command: $*\" >&2\n")
+	out.WriteString("exit 1\n")
 	path := filepath.Join(binDir, "opencode")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte(out.String()), 0o755); err != nil {
 		t.Fatalf("WriteFile fake opencode: %v", err)
 	}
 }

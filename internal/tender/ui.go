@@ -69,7 +69,7 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 
 		switch strings.TrimSpace(action) {
 		case "1":
-			base := Tender{Agent: "Build", Manual: true, Push: false}
+			base := Tender{Manual: true, Push: false}
 			t, ok, err := inputTender(r, stdout, root, base, true, tty)
 			if err != nil {
 				if errors.Is(err, errQuitRequested) {
@@ -125,7 +125,8 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 }
 
 func drawHome(w io.Writer, tenders []Tender, offset int, tty *os.File) {
-	w = beginScreen(w, tty, 22)
+	// Keep vertical centering aligned with the actual rendered dashboard height.
+	w = beginScreen(w, tty, 21+rootTenderSlots())
 	drawHero(w)
 	fmt.Fprintln(w)
 	drawMeta(w, len(tenders))
@@ -142,7 +143,7 @@ func drawHome(w io.Writer, tenders []Tender, offset int, tty *os.File) {
 			fmt.Fprintf(w, "  %s  %-20s %-30s\n", numberChip(key), t.Name, paintTrigger(TriggerSummary(t.Cron, t.Manual, t.Push), t.Cron, t.Manual, t.Push))
 			continue
 		}
-		fmt.Fprintf(w, "  %s  %s(empty)%s\n", numberChip(key), cDim, cReset)
+		fmt.Fprintln(w)
 	}
 	fmt.Fprintf(w, "  %s  Scroll up\n", numberChip(rootPageUpKey))
 	fmt.Fprintf(w, "  %s  Scroll down\n", numberChip(rootPageDownKey))
@@ -177,8 +178,13 @@ func drawMeta(w io.Writer, count int) {
 	fmt.Fprintf(w, "%s%s%s COUNT %s %d total tender(s)\n", cBgPink, cWhite, cBold, cReset, count)
 }
 
-func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew bool, tty *os.File) (Tender, bool, error) {
-	w = beginScreen(w, tty, 24)
+func drawTenderFormScreen(w io.Writer, tty *os.File, root string, isNew bool, draft Tender, notice string, showAgent bool) io.Writer {
+	w = beginScreen(w, tty, 21+rootTenderSlots())
+	drawHero(w)
+	fmt.Fprintln(w)
+	drawMeta(w, tenderCount(root))
+	fmt.Fprintln(w)
+
 	if isNew {
 		fmt.Fprintf(w, "%sCreate Tender%s\n", colorLabel(cCyan), cReset)
 	} else {
@@ -186,22 +192,56 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 	}
 	rule(w, '-')
 
+	nameValue := strings.TrimSpace(draft.Name)
+	if nameValue == "" {
+		nameValue = "(pending)"
+	}
+	context := fmt.Sprintf("Current: name=%s", nameValue)
+	if showAgent {
+		agentValue := strings.TrimSpace(draft.Agent)
+		if agentValue == "" {
+			agentValue = "(pending)"
+		}
+		context = fmt.Sprintf("%s | agent=%s", context, agentValue)
+	}
+	fmt.Fprintln(w, context)
+
+	if strings.TrimSpace(notice) != "" {
+		fmt.Fprintf(w, "%sNote:%s %s\n", cYellow, cReset, notice)
+	}
+	fmt.Fprintln(w)
+	return w
+}
+
+func acknowledgeTenderForm(r *bufio.Reader, w io.Writer, tty *os.File, root string, isNew bool, draft Tender, notice string, msg string, showAgent bool) error {
+	screen := drawTenderFormScreen(w, tty, root, isNew, draft, notice, showAgent)
+	printErr(screen, msg)
+	return acknowledge(r, screen, tty)
+}
+
+func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew bool, tty *os.File) (Tender, bool, error) {
+	draft := base
+	if isNew {
+		// In create flow, agent is not selected yet. Don't preview a default.
+		draft.Agent = ""
+	}
+
 	namePrompt := "Name: "
 	if base.Name != "" {
 		namePrompt = fmt.Sprintf("Name (default: %s): ", base.Name)
 	}
-	nameInput, err := prompt(r, w, namePrompt)
+	nameScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", false)
+	nameInput, err := promptText(r, nameScreen, namePrompt)
 	if err != nil {
-		if errors.Is(err, errQuitRequested) {
-			return Tender{}, false, err
-		}
 		return Tender{}, false, err
 	}
 	nameInput = strings.TrimSpace(nameInput)
 	if nameInput == "" {
 		if strings.TrimSpace(base.Name) == "" {
-			printErr(w, "Name is required.")
-			if err := acknowledge(r, w, tty); err != nil {
+			if err := acknowledgeTenderForm(r, w, tty, root, isNew, draft, "", "Name is required.", false); err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return base, false, nil
+				}
 				return Tender{}, false, err
 			}
 			return base, false, nil
@@ -209,28 +249,43 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 		nameInput = base.Name
 	}
 	name := strings.TrimSpace(nameInput)
+	draft.Name = name
 
-	agent, err := chooseAgent(r, w, root, base.Agent, tty)
+	agent, err := chooseAgent(r, w, root, base.Agent, tty, isNew, name)
 	if err != nil {
+		if errors.Is(err, errQuitRequested) {
+			return base, false, nil
+		}
 		return Tender{}, false, err
 	}
+	draft.Agent = agent
 
-	push, err := promptBinaryChoice(r, w, tty, "Run on every push to main?", base.Push, false)
+	pushScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+	push, err := promptBinaryChoice(r, pushScreen, tty, "Run on every push to main?", base.Push, false)
 	if err != nil {
+		if errors.Is(err, errQuitRequested) {
+			return base, false, nil
+		}
 		return Tender{}, false, err
 	}
+	draft.Push = push
 
 	hasScheduleDefault := isNew || strings.TrimSpace(base.Cron) != ""
-	hasSchedule, err := promptBinaryChoice(r, w, tty, "Enable recurring schedule?", hasScheduleDefault, false)
+	scheduleToggleScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+	hasSchedule, err := promptBinaryChoice(r, scheduleToggleScreen, tty, "Enable recurring schedule?", hasScheduleDefault, false)
 	if err != nil {
+		if errors.Is(err, errQuitRequested) {
+			return base, false, nil
+		}
 		return Tender{}, false, err
 	}
 
 	cron := strings.TrimSpace(base.Cron)
 	if hasSchedule {
 		defaults, hasDefaults := scheduleDefaultsFromCron(cron)
+		notice := ""
 		if cron != "" && !hasDefaults {
-			fmt.Fprintf(w, "%sWarning:%s existing schedule is unsupported in presets; choose a new one.\n", cYellow, cReset)
+			notice = "Existing schedule is unsupported in presets; choose a new one."
 		}
 
 		defaultMode := 1
@@ -245,8 +300,12 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			}
 		}
 
-		modeIndex, err := selectNumberedOption(r, w, tty, "Schedule", []string{"Hourly", "Daily", "Weekly"}, defaultMode, true)
+		scheduleModeScreen := drawTenderFormScreen(w, tty, root, isNew, draft, notice, true)
+		modeIndex, err := selectNumberedOption(r, scheduleModeScreen, tty, "Schedule", []string{"Hourly", "Daily", "Weekly"}, defaultMode, true)
 		if err != nil {
+			if errors.Is(err, errQuitRequested) {
+				return base, false, nil
+			}
 			return Tender{}, false, err
 		}
 
@@ -256,15 +315,21 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			if hasDefaults {
 				minuteDefault = nearestQuarterIndex(defaults.Minute)
 			}
-			minuteIndex, err := selectNumberedOption(r, w, tty, "Hourly minute", []string{":00", ":15", ":30", ":45"}, minuteDefault, true)
+			hourlyMinuteScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+			minuteIndex, err := selectNumberedOption(r, hourlyMinuteScreen, tty, "Hourly minute", []string{":00", ":15", ":30", ":45"}, minuteDefault, true)
 			if err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return base, false, nil
+				}
 				return Tender{}, false, err
 			}
 			minutes := []int{0, 15, 30, 45}
 			built, err := buildHourlyCron(strconv.Itoa(minutes[minuteIndex]))
 			if err != nil {
-				printErr(w, err.Error())
-				if err := acknowledge(r, w, tty); err != nil {
+				if err := acknowledgeTenderForm(r, w, tty, root, isNew, draft, "", err.Error(), true); err != nil {
+					if errors.Is(err, errQuitRequested) {
+						return base, false, nil
+					}
 					return Tender{}, false, err
 				}
 				return base, false, nil
@@ -276,15 +341,21 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			if hasDefaults {
 				timeDefault = defaultTimePresetIndex(defaults.Hour, defaults.Minute)
 			}
-			timeIndex, err := selectNumberedOption(r, w, tty, "Daily time (UTC)", timePresetLabels(), timeDefault, true)
+			dailyTimeScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+			timeIndex, err := selectNumberedOption(r, dailyTimeScreen, tty, "Daily time (UTC)", timePresetLabels(), timeDefault, true)
 			if err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return base, false, nil
+				}
 				return Tender{}, false, err
 			}
 			preset := dailyTimePresets[timeIndex]
 			built, err := buildDailyCron(formatTime(preset.Hour, preset.Minute))
 			if err != nil {
-				printErr(w, err.Error())
-				if err := acknowledge(r, w, tty); err != nil {
+				if err := acknowledgeTenderForm(r, w, tty, root, isNew, draft, "", err.Error(), true); err != nil {
+					if errors.Is(err, errQuitRequested) {
+						return base, false, nil
+					}
 					return Tender{}, false, err
 				}
 				return base, false, nil
@@ -296,8 +367,12 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			if hasDefaults {
 				dayDefault = defaultWeeklyDayPresetIndex(defaults.Days)
 			}
-			dayIndex, err := selectNumberedOption(r, w, tty, "Weekly days", weeklyDayPresetLabels(), dayDefault, true)
+			weeklyDaysScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+			dayIndex, err := selectNumberedOption(r, weeklyDaysScreen, tty, "Weekly days", weeklyDayPresetLabels(), dayDefault, true)
 			if err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return base, false, nil
+				}
 				return Tender{}, false, err
 			}
 
@@ -305,8 +380,12 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			if hasDefaults {
 				timeDefault = defaultTimePresetIndex(defaults.Hour, defaults.Minute)
 			}
-			timeIndex, err := selectNumberedOption(r, w, tty, "Weekly time (UTC)", timePresetLabels(), timeDefault, true)
+			weeklyTimeScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+			timeIndex, err := selectNumberedOption(r, weeklyTimeScreen, tty, "Weekly time (UTC)", timePresetLabels(), timeDefault, true)
 			if err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return base, false, nil
+				}
 				return Tender{}, false, err
 			}
 
@@ -314,16 +393,16 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			preset := dailyTimePresets[timeIndex]
 			built, err := buildWeeklyCron(joinInts(days, ","), formatTime(preset.Hour, preset.Minute))
 			if err != nil {
-				printErr(w, err.Error())
-				if err := acknowledge(r, w, tty); err != nil {
+				if err := acknowledgeTenderForm(r, w, tty, root, isNew, draft, "", err.Error(), true); err != nil {
+					if errors.Is(err, errQuitRequested) {
+						return base, false, nil
+					}
 					return Tender{}, false, err
 				}
 				return base, false, nil
 			}
 			cron = built
 		}
-
-		fmt.Fprintf(w, "%sSchedule:%s %s\n", cDim, cReset, TriggerSummary(cron, true, push))
 	} else {
 		cron = ""
 	}
@@ -339,8 +418,10 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 	}
 
 	if err := ValidateTender(result); err != nil {
-		printErr(w, err.Error())
-		if err := acknowledge(r, w, tty); err != nil {
+		if err := acknowledgeTenderForm(r, w, tty, root, isNew, draft, "", err.Error(), true); err != nil {
+			if errors.Is(err, errQuitRequested) {
+				return base, false, nil
+			}
 			return Tender{}, false, err
 		}
 		return base, false, nil
@@ -470,16 +551,23 @@ func joinInts(nums []int, sep string) string {
 }
 
 func prompt(r *bufio.Reader, w io.Writer, label string) (string, error) {
+	choice, err := promptText(r, w, label)
+	if err != nil {
+		return "", err
+	}
+	if isQuitChoice(choice) {
+		return "", errQuitRequested
+	}
+	return choice, nil
+}
+
+func promptText(r *bufio.Reader, w io.Writer, label string) (string, error) {
 	fmt.Fprint(w, label)
 	line, err := r.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return "", err
 	}
-	choice := strings.TrimSpace(line)
-	if isQuitChoice(choice) {
-		return "", errQuitRequested
-	}
-	return choice, nil
+	return strings.TrimSpace(line), nil
 }
 
 func clearScreen(w io.Writer) {
@@ -492,20 +580,24 @@ func acknowledge(r *bufio.Reader, w io.Writer, tty *os.File) error {
 }
 
 func printErr(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%sERROR:%s %s\n", cRed, cReset, msg)
+	fmt.Fprintf(w, "  %sERROR:%s %s\n", cRed, cReset, msg)
+}
+
+func printInfo(w io.Writer, msg string) {
+	fmt.Fprintf(w, "  %sINFO:%s %s\n", cDim, cReset, msg)
 }
 
 func printOK(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%sOK:%s %s\n", cGreen, cReset, msg)
+	fmt.Fprintf(w, "  %sOK:%s %s\n", cGreen, cReset, msg)
 }
 
-func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty *os.File) (string, error) {
+func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty *os.File, isNew bool, name string) (string, error) {
 	agents, err := DiscoverPrimaryAgents(root)
 	if err != nil {
 		return "", fmt.Errorf("unable to discover OpenCode agents: %w", err)
 	}
 	if len(agents) == 0 {
-		return "", fmt.Errorf("no OpenCode agents found")
+		return "", fmt.Errorf("no custom OpenCode agents found")
 	}
 
 	defaultIndex := 0
@@ -514,7 +606,10 @@ func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty 
 			defaultIndex = idx
 		}
 	}
-	idx, err := selectNumberedOption(r, w, tty, "Agent", agents, defaultIndex, true)
+	// Render a fresh dedicated step screen for agent selection.
+	step := Tender{Name: name}
+	screen := drawTenderFormScreen(w, tty, root, isNew, step, "", false)
+	idx, err := selectNumberedOption(r, screen, tty, "Agent", agents, defaultIndex, true)
 	if err != nil {
 		return "", err
 	}
@@ -583,7 +678,7 @@ func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name
 			return nil
 		}
 		selected := tenders[idx]
-		sw := beginScreen(w, tty, 18)
+		sw := beginScreen(w, tty, 21+rootTenderSlots())
 		drawHero(sw)
 		fmt.Fprintln(sw)
 		fmt.Fprintf(sw, "%sTender%s %s%s%s\n", colorLabel(cPink), cReset, cBold, selected.Name, cReset)
@@ -595,6 +690,9 @@ func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name
 		fmt.Fprintf(sw, "  %s  Back\n", numberChip(1))
 		fmt.Fprintf(sw, "  %s  Edit\n", numberChip(2))
 		fmt.Fprintf(sw, "  %s  Delete\n", numberChip(3))
+		for i := 3; i < rootTenderSlots(); i++ {
+			fmt.Fprintln(sw)
+		}
 		rule(sw, '.')
 
 		action, err := promptMenuChoice(r, sw, tty, "")
@@ -666,22 +764,102 @@ func selectNumberedOption(r *bufio.Reader, w io.Writer, tty *os.File, title stri
 		defaultIndex = 0
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "%s%s%s\n", colorLabel(cCyan), title, cReset)
-	rule(w, '.')
-	for i, option := range options {
-		line := option
-		if hasDefault && i == defaultIndex {
-			line = fmt.Sprintf("%s %s(default)%s", option, cDim, cReset)
+	if len(options) <= 9 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "%s%s%s\n", colorLabel(cCyan), title, cReset)
+		rule(w, '.')
+		for i := 0; i < len(options); i++ {
+			line := options[i]
+			if hasDefault && i == defaultIndex {
+				line = fmt.Sprintf("%s %s(default)%s", line, cDim, cReset)
+			}
+			fmt.Fprintf(w, "  %s  %s\n", numberChip(i+1), line)
 		}
-		fmt.Fprintf(w, "  %s  %s\n", numberChip(i+1), line)
-	}
-	rule(w, '.')
+		rule(w, '.')
 
+		for {
+			label := fmt.Sprintf("Choose 1-%d: ", len(options))
+			if hasDefault {
+				label = fmt.Sprintf("Choose 1-%d (default: %d): ", len(options), defaultIndex+1)
+			}
+			choice, err := promptMenuChoice(r, w, tty, label)
+			if err != nil {
+				return -1, err
+			}
+			choice = strings.TrimSpace(choice)
+			if choice == "" {
+				if hasDefault {
+					return defaultIndex, nil
+				}
+				printErr(w, "Selection required.")
+				continue
+			}
+			n, err := strconv.Atoi(choice)
+			if err == nil && n >= 1 && n <= len(options) {
+				return n - 1, nil
+			}
+			printErr(w, "Invalid selection.")
+		}
+	}
+
+	// Single-key menu mode for long lists: 1-8 select current page, 9/0 scroll.
+	const pageFirstKey = 1
+	const pageLastKey = 8
+	pageSize := pageLastKey - pageFirstKey + 1
+	pageRenderLines := pageSize + 8
+	offset := (defaultIndex / pageSize) * pageSize
+	offset = clampOffset(offset, len(options), pageSize)
+	controlWriter := w
+	if pw, ok := w.(*prefixedWriter); ok {
+		controlWriter = pw.w
+	}
+	canRepaint := tty != nil && supportsRawTTY(tty)
+
+	renderPage := func(redraw bool, status string) {
+		if redraw && canRepaint {
+			// Replace previous option block + prior prompt line in place.
+			fmt.Fprintf(controlWriter, "\033[%dA\033[J", pageRenderLines+1)
+		}
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "%s%s%s\n", colorLabel(cCyan), title, cReset)
+		rule(w, '.')
+		for slot := 0; slot < pageSize; slot++ {
+			idx := offset + slot
+			if idx >= 0 && idx < len(options) {
+				line := options[idx]
+				if hasDefault && idx == defaultIndex {
+					line = fmt.Sprintf("%s %s(default)%s", line, cDim, cReset)
+				}
+				fmt.Fprintf(w, "  %s  %s\n", numberChip(slot+1), line)
+				continue
+			}
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "  %s  Scroll up\n", numberChip(rootPageUpKey))
+		fmt.Fprintf(w, "  %s  Scroll down\n", numberChip(rootPageDownKey))
+		rule(w, '.')
+		start := offset + 1
+		end := min(offset+pageSize, len(options))
+		page := (offset / pageSize) + 1
+		pages := (len(options) + pageSize - 1) / pageSize
+		fmt.Fprintf(w, "%sShowing %d-%d of %d (page %d/%d)%s\n", cDim, start, end, len(options), page, pages, cReset)
+		if strings.TrimSpace(status) != "" {
+			printInfo(w, status)
+		} else {
+			fmt.Fprintln(w)
+		}
+	}
+
+	status := ""
+	redraw := false
 	for {
-		label := fmt.Sprintf("Choose 1-%d: ", len(options))
+		renderPage(redraw, status)
+		redraw = true
+		status = ""
+
+		label := "Choose 1-8, 9(up), 0(down): "
 		if hasDefault {
-			label = fmt.Sprintf("Choose 1-%d (default: %d): ", len(options), defaultIndex+1)
+			label = "Choose 1-8, 9(up), 0(down) (Enter for default): "
 		}
 		choice, err := promptMenuChoice(r, w, tty, label)
 		if err != nil {
@@ -692,14 +870,45 @@ func selectNumberedOption(r *bufio.Reader, w io.Writer, tty *os.File, title stri
 			if hasDefault {
 				return defaultIndex, nil
 			}
-			printErr(w, "Selection required.")
+			status = "Selection required."
 			continue
 		}
-		n, err := strconv.Atoi(choice)
-		if err == nil && n >= 1 && n <= len(options) {
-			return n - 1, nil
+
+		switch choice {
+		case strconv.Itoa(rootPageUpKey):
+			next := offset - pageSize
+			if next < 0 {
+				next = 0
+			}
+			if next == offset {
+				status = "Already at first page."
+				continue
+			}
+			offset = next
+			continue
+		case strconv.Itoa(rootPageDownKey):
+			next := offset + pageSize
+			if next+pageSize > len(options) && next >= len(options) {
+				status = "Already at last page."
+				continue
+			}
+			next = clampOffset(next, len(options), pageSize)
+			if next == offset {
+				status = "Already at last page."
+				continue
+			}
+			offset = next
+			continue
 		}
-		printErr(w, "Invalid selection.")
+
+		if len(choice) == 1 && choice[0] >= '1' && choice[0] <= '8' {
+			slot := int(choice[0] - '1')
+			idx := offset + slot
+			if idx >= 0 && idx < len(options) {
+				return idx, nil
+			}
+		}
+		status = "Invalid selection."
 	}
 }
 
@@ -1064,6 +1273,14 @@ func bytesIndexByte(b []byte, c byte) int {
 
 func rootTenderSlots() int {
 	return rootLastTenderKey - rootFirstTenderKey + 1
+}
+
+func tenderCount(root string) int {
+	tenders, err := LoadTenders(root)
+	if err != nil {
+		return 0
+	}
+	return len(tenders)
 }
 
 func clampOffset(offset, total, pageSize int) int {

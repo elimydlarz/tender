@@ -27,7 +27,7 @@ EOF
 		t.Fatalf("DiscoverPrimaryAgents: %v", err)
 	}
 
-	want := []string{"Build", "TestReviewer"}
+	want := []string{"TestReviewer"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("agents mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -48,7 +48,7 @@ EOF
 		t.Fatalf("DiscoverPrimaryAgents: %v", err)
 	}
 
-	want := []string{"Build", "TestReviewer"}
+	want := []string{"TestReviewer"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("agents mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -80,7 +80,7 @@ echo "NAME MODE"
 	if err == nil {
 		t.Fatal("expected error for empty agent list")
 	}
-	if !strings.Contains(err.Error(), "returned no usable agents") {
+	if !strings.Contains(err.Error(), "returned no custom primary agents") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -88,9 +88,59 @@ echo "NAME MODE"
 func TestParseOpenCodeAgentList_StripsANSIAndHeaders(t *testing.T) {
 	out := "\x1b[38;5;45mNAME MODE\x1b[0m\nBuild primary\nTestReviewer primary\n"
 	got := parseOpenCodeAgentList(out)
-	want := []string{"Build", "TestReviewer"}
+	want := []string{"TestReviewer"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("agents mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestParseOpenCodeAgentList_FiltersSystemAndNonPrimaryFromText(t *testing.T) {
+	out := strings.Join([]string{
+		"build (primary)",
+		"summary (primary)",
+		"title (primary)",
+		"explore (subagent)",
+		"general (subagent)",
+		"Build (primary)",
+		"ImproveDesign (primary)",
+		"TendTests (primary)",
+	}, "\n")
+
+	got := parseOpenCodeAgentList(out)
+	want := []string{"ImproveDesign", "TendTests"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("agents mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestParseOpenCodeAgentList_FiltersSystemAndNonPrimaryFromJSON(t *testing.T) {
+	out := `{"agents":[{"name":"summary","mode":"primary"},{"name":"Build","mode":"primary"},{"name":"explore","mode":"subagent"},{"name":"TendTests","mode":"primary"}]}`
+	got := parseOpenCodeAgentList(out)
+	want := []string{"TendTests"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("agents mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestIsSystemAgent_CaseInsensitive(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "lowercase system", input: "build", want: true},
+		{name: "capitalized system", input: "Build", want: true},
+		{name: "trimmed system", input: "  summary  ", want: true},
+		{name: "custom", input: "TendTests", want: false},
+		{name: "empty", input: " ", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsSystemAgent(tc.input)
+			if got != tc.want {
+				t.Fatalf("IsSystemAgent(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
 	}
 }
 

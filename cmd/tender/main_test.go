@@ -32,11 +32,16 @@ func TestUsage(t *testing.T) {
 		expectedLines := []string{
 			"tender - interactive CLI for autonomous OpenCode schedules",
 			"Usage:",
-			"tender             Launch interactive TUI",
-			"tender init        Ensure .github/workflows exists",
-			"tender ls          List managed tender workflows",
-			"tender run <name>  Trigger an on-demand tender now via GitHub CLI",
-			"tender rm <name>   Remove a tender workflow",
+			"tender <command> [args]",
+			"Commands:",
+			"init            Ensure .github/workflows exists",
+			"add             Add a tender non-interactively (agent-friendly)",
+			"update          Update a tender non-interactively (agent-friendly)",
+			"ls              List managed tender workflows",
+			"run             Trigger an on-demand tender now via GitHub CLI",
+			"rm              Remove a tender workflow",
+			"help [command]  Show command help",
+			"Use `tender <command> --help` to show command-specific usage and flags.",
 		}
 
 		for _, line := range expectedLines {
