@@ -220,8 +220,8 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 		return Tender{}, false, err
 	}
 
-	hasScheduleDefault := strings.TrimSpace(base.Cron) != ""
-	hasSchedule, err := promptBinaryChoice(r, w, tty, "Enable recurring schedule?", hasScheduleDefault, isNew)
+	hasScheduleDefault := isNew || strings.TrimSpace(base.Cron) != ""
+	hasSchedule, err := promptBinaryChoice(r, w, tty, "Enable recurring schedule?", hasScheduleDefault, false)
 	if err != nil {
 		return Tender{}, false, err
 	}

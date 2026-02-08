@@ -64,15 +64,14 @@ Single command release:
 make publish VERSION=0.2.0
 ```
 
-Dry run (no push):
+Dry run (no publish):
 
 ```bash
 make release-dry-run VERSION=0.2.0
 ```
 
-Release workflow requirements:
-- GitHub repository secret `NPM_TOKEN` must be set.
-- Tag version must match `package.json` version.
+Local publish requirements:
+- `NPM_TOKEN` environment variable must be set in your shell.
 
 ## Workflow Contract
 

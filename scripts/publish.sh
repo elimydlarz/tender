@@ -19,6 +19,11 @@ fi
 TAG="v$VERSION"
 DRY_RUN="${DRY_RUN:-0}"
 
+if [[ "$DRY_RUN" != "1" && -z "${NPM_TOKEN:-}" ]]; then
+  echo "error: NPM_TOKEN must be set for npm publish"
+  exit 2
+fi
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "error: working tree is dirty; commit or stash changes first"
   exit 1
@@ -44,18 +49,28 @@ echo "==> Creating tag $TAG"
 git tag "$TAG"
 
 if [[ "$DRY_RUN" == "1" ]]; then
+  echo "==> Running npm publish dry run"
+  npm publish --access public --dry-run
   echo "==> Dry run complete"
-  echo "created local commit and tag only; nothing pushed"
+  echo "created local commit and tag only; package was not published"
   exit 0
 fi
 
-echo "==> Pushing commit and tag"
-git push origin HEAD
-git push origin "$TAG"
+echo "==> Publishing npm package @tender/cli"
+NPMRC="$(mktemp)"
+cleanup() {
+  rm -f "$NPMRC"
+}
+trap cleanup EXIT
+cat >"$NPMRC" <<EOF
+registry=https://registry.npmjs.org/
+always-auth=true
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+EOF
+NPM_CONFIG_USERCONFIG="$NPMRC" npm publish --access public
 
 cat <<EOF
-Release kicked off.
-- GitHub Actions workflow: release
-- Builds binaries and publishes a GitHub release
-- Publishes npm package @tender/cli (requires NPM_TOKEN secret)
+Release complete.
+- Published npm package @tender/cli@$VERSION
+- Created local commit and tag $TAG
 EOF

@@ -1,54 +1,91 @@
 # tender
 
-`tender` is an interactive CLI for scheduling autonomous OpenCode runs in GitHub Actions.
+`tender` is an interactive CLI/TUI for managing autonomous OpenCode runs in GitHub
+Actions.
 
 Tender keeps state in workflow files only. No sidecar metadata files.
 
-## Install (pnpm)
+## Run
 
-One-off run:
+No install required:
 
 ```bash
-pnpm dlx @tender/cli@latest
+npx --yes @tender/cli@latest
 ```
 
-Install in your repo:
+Run subcommands the same way:
 
 ```bash
-pnpm add -D @tender/cli
-pnpm exec tender
+npx --yes @tender/cli@latest ls
+npx --yes @tender/cli@latest run my-tender
 ```
 
 ## Quick Start
 
-1. Run `pnpm exec tender`.
-2. Choose `Add tender`.
-3. Enter a name.
-4. Pick agent and schedule from the numeric menus.
+1. Ensure repo secrets are configured for your OpenCode provider.
+2. Run `npx --yes @tender/cli@latest`.
+3. Choose `Add tender`.
+4. Enter a name.
+5. Pick agent and schedule.
+6. Commit and push the generated workflow under `.github/workflows/`.
 
-Tender writes/updates a managed workflow under `.github/workflows/`.
+## Requirements
+
+- GitHub repository with Actions enabled.
+- OpenCode config in the repo (`opencode.json` and/or `.opencode/`) or defaults
+  available to OpenCode.
+- GitHub CLI (`gh`) authenticated for local dispatches (`tender run`).
+- Provider API key secrets for OpenCode (for example `OPENAI_API_KEY`,
+  `ANTHROPIC_API_KEY`) configured in your repository.
+
+## Authentication
+
+Tender uses two auth flows.
+
+### 1. Local auth (`tender run`)
+
+- `tender run <name>` shells out to `gh workflow run ...`.
+- You must be logged into GitHub CLI for the target repo (`gh auth login`).
+
+### 2. GitHub Actions auth (workflow execution)
+
+Generated workflows do this in the `Run OpenCode` step:
+
+- Install OpenCode on the runner.
+- Pass provider credentials from repo secrets:
+  - `OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}`
+  - `ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}`
+- Set config paths when present:
+  - `OPENCODE_CONFIG=$GITHUB_WORKSPACE/opencode.json`
+  - `OPENCODE_CONFIG_DIR=$GITHUB_WORKSPACE/.opencode`
+
+Generated workflows also set `permissions: contents: write`, which allows the job
+token to push commits back to `main`.
 
 ## Commands
 
+Use these as:
+
+```bash
+npx --yes @tender/cli@latest <command>
+```
+
 - `tender` launches the interactive TUI.
+- `tender init` ensures `.github/workflows` exists.
 - `tender ls` lists managed tenders.
-- `tender run <name>` triggers a tender immediately via `workflow_dispatch` (requires `gh` auth).
-- `tender rm <name>` removes a managed tender.
+- `tender run [--prompt "..."] <name>` triggers a tender immediately via
+  `workflow_dispatch`.
+- `tender rm [--yes] <name>` removes a managed tender.
 
 ## How It Works
 
-- Uses GitHub Actions workflows as the source of truth.
+- Uses GitHub Actions workflow files as the source of truth.
 - Detects OpenCode agents via `opencode agent list`.
 - Generates workflows that run `opencode run --agent ...`.
 - Supports on-demand and scheduled runs.
 - Uses plain-English trigger display in the CLI.
 - Pushes changes directly to `main` from workflow runs.
-
-## Requirements
-
-- GitHub repository with Actions enabled.
-- OpenCode config in the repo (or defaults available to OpenCode).
-- Secrets expected by your OpenCode setup (for example API keys).
+- Uses shared concurrency group `tender-main`.
 
 ## Contributing
 
@@ -56,18 +93,19 @@ Contributor/developer docs are in `CONTRIBUTING.md`.
 
 ## Maintainer Release
 
-One command:
-
 ```bash
 make publish VERSION=0.2.0
 ```
 
 What it does:
+
 - Runs `check-fast` and npm pack smoke checks.
 - Bumps `package.json` version.
 - Commits `release: vX.Y.Z`.
 - Tags `vX.Y.Z` and pushes commit + tag.
-- Triggers GitHub Actions `release` workflow to build binaries and publish `@tender/cli`.
+- Triggers GitHub Actions `release` workflow to build binaries and publish
+  `@tender/cli`.
 
 Repository secret required for npm publishing:
+
 - `NPM_TOKEN`

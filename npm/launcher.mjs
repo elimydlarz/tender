@@ -2,13 +2,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { spawn } from "node:child_process";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, "..", "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 const packageVersion = packageJson.version;
+const releaseBaseUrl =
+  process.env.TENDER_RELEASE_BASE_URL ||
+  "https://github.com/elimydlarz/tender/releases/download";
 
 const args = process.argv.slice(2);
 
@@ -22,22 +27,16 @@ if (args.includes("--version") || args.includes("-v")) {
   process.exit(0);
 }
 
-if (args.length > 0) {
-  process.stderr.write(
-    "tender is interactive-only. Run without arguments: npx --yes .\n"
-  );
-  process.exit(2);
-}
-
 const binPath = await resolveBinaryPath();
-const exitCode = await execBinary(binPath);
+const exitCode = await execBinary(binPath, args);
 process.exit(exitCode);
 
 function printHelp() {
   process.stdout.write("tender\n\n");
-  process.stdout.write("Interactive-only CLI launcher.\n\n");
+  process.stdout.write("Launcher for the tender CLI.\n\n");
   process.stdout.write("Usage:\n");
-  process.stdout.write("  npx --yes .\n");
+  process.stdout.write("  npx --yes @tender/cli@latest\n");
+  process.stdout.write("  npx --yes @tender/cli@latest <command>\n");
 }
 
 async function resolveBinaryPath() {
@@ -49,9 +48,10 @@ async function resolveBinaryPath() {
   }
 
   const ext = process.platform === "win32" ? ".exe" : "";
+  const binaryName = `tender${ext}`;
   const candidates = [
-    path.join(process.cwd(), "bin", `tender${ext}`),
-    path.join(__dirname, "..", "bin", `tender${ext}`),
+    path.join(process.cwd(), "bin", binaryName),
+    path.join(__dirname, "..", "bin", binaryName),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -59,18 +59,12 @@ async function resolveBinaryPath() {
     }
   }
 
-  throw new Error(
-    [
-      "Local tender binary not found.",
-      "Run `make build` from the repository root, then run `npx --yes .` again.",
-      "Alternatively set TENDER_BINARY_PATH to a built tender binary.",
-    ].join(" ")
-  );
+  return await ensureDownloadedBinary();
 }
 
-function execBinary(binPath) {
+function execBinary(binPath, binaryArgs) {
   return new Promise((resolve, reject) => {
-    const child = spawn(binPath, [], { stdio: "inherit" });
+    const child = spawn(binPath, binaryArgs, { stdio: "inherit" });
 
     child.on("exit", (code, signal) => {
       if (signal) {
@@ -81,5 +75,119 @@ function execBinary(binPath) {
     });
 
     child.on("error", reject);
+  });
+}
+
+async function ensureDownloadedBinary() {
+  const mappedPlatform = mapPlatform(process.platform);
+  const mappedArch = mapArch(process.arch);
+  if (!mappedPlatform || !mappedArch) {
+    throw new Error(
+      `Unsupported platform for @tender/cli: platform=${process.platform} arch=${process.arch}`
+    );
+  }
+
+  const ext = mappedPlatform === "windows" ? ".exe" : "";
+  const localName = `tender${ext}`;
+  const cacheDir = path.join(defaultCacheRoot(), "tender", "cli", packageVersion);
+  const cachePath = path.join(cacheDir, localName);
+  if (fs.existsSync(cachePath)) {
+    return cachePath;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  const assetName = `tender_${packageVersion}_${mappedPlatform}_${mappedArch}${ext}`;
+  const downloadUrl = `${releaseBaseUrl}/v${packageVersion}/${assetName}`;
+  const tempPath = path.join(cacheDir, `${localName}.tmp-${process.pid}`);
+
+  try {
+    await downloadToPath(downloadUrl, tempPath);
+    if (mappedPlatform !== "windows") {
+      fs.chmodSync(tempPath, 0o755);
+    }
+    fs.renameSync(tempPath, cachePath);
+  } catch (error) {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // Best-effort temp cleanup only.
+    }
+    if (fs.existsSync(cachePath)) {
+      return cachePath;
+    }
+    throw new Error(
+      [
+        `Unable to download tender binary for ${mappedPlatform}/${mappedArch} (${packageVersion}).`,
+        `Tried: ${downloadUrl}`,
+        `Original error: ${error instanceof Error ? error.message : String(error)}`,
+      ].join(" ")
+    );
+  }
+
+  return cachePath;
+}
+
+function defaultCacheRoot() {
+  if (process.env.TENDER_CACHE_DIR) {
+    return process.env.TENDER_CACHE_DIR;
+  }
+  if (process.platform === "win32") {
+    return process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  }
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Caches");
+  }
+  return process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+}
+
+function mapPlatform(platform) {
+  if (platform === "darwin") {
+    return "darwin";
+  }
+  if (platform === "linux") {
+    return "linux";
+  }
+  if (platform === "win32") {
+    return "windows";
+  }
+  return "";
+}
+
+function mapArch(arch) {
+  if (arch === "x64") {
+    return "amd64";
+  }
+  if (arch === "arm64") {
+    return "arm64";
+  }
+  return "";
+}
+
+async function downloadToPath(url, destinationPath) {
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "@tender/cli",
+      accept: "application/octet-stream",
+    },
+    redirect: "follow",
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  }
+  if (!response.body) {
+    throw new Error("empty response body");
+  }
+
+  await streamToFile(Readable.fromWeb(response.body), destinationPath);
+}
+
+function streamToFile(readable, destinationPath) {
+  return new Promise((resolve, reject) => {
+    const writable = fs.createWriteStream(destinationPath);
+    readable.on("error", reject);
+    writable.on("error", reject);
+    writable.on("finish", resolve);
+    readable.pipe(writable);
   });
 }

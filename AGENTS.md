@@ -38,8 +38,8 @@ These instructions apply to the entire repository.
   - `make acceptance`: run acceptance tests (`act` + `git`)
   - `make check-fast`: run `fmt-check + lint + test + build`
   - `make check`: run full verification (`check-fast + acceptance`)
-  - `make publish VERSION=x.y.z`: run checks, bump package version, tag, and push release
-  - `make release-dry-run VERSION=x.y.z`: same release flow without pushing
+  - `make publish VERSION=x.y.z`: run checks, bump package version, publish to npm locally, and keep commit/tag local
+  - `make release-dry-run VERSION=x.y.z`: same release flow without npm publish
 - Direct commands still supported:
   - Build: `GOCACHE=$PWD/.gocache go build ./...`
   - Unit/default tests: `GOCACHE=$PWD/.gocache go test ./...`

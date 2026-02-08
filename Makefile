@@ -23,8 +23,8 @@ help:
 	@echo "  make acceptance   Run acceptance tests (uses act + git)"
 	@echo "  make check-fast   Run fmt-check + lint + test + build"
 	@echo "  make check        Run full verification (check-fast + acceptance)"
-	@echo "  make publish VERSION=x.y.z  Cut and push a release tag (publishes via CI)"
-	@echo "  make release-dry-run VERSION=x.y.z  Validate release flow without pushing"
+	@echo "  make publish VERSION=x.y.z  Publish npm package from local machine"
+	@echo "  make release-dry-run VERSION=x.y.z  Validate local publish flow without publish"
 
 build:
 	@mkdir -p "$(BIN_DIR)"

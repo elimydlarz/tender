@@ -850,6 +850,50 @@ func TestPrompt(t *testing.T) {
 	})
 }
 
+func TestPromptBinaryChoice(t *testing.T) {
+	t.Run("accepts default yes on enter", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("\n"))
+		var out bytes.Buffer
+
+		got, err := promptBinaryChoice(reader, &out, nil, "Enable recurring schedule?", true, false)
+		if err != nil {
+			t.Fatalf("promptBinaryChoice returned error: %v", err)
+		}
+		if !got {
+			t.Fatal("expected default yes selection")
+		}
+	})
+
+	t.Run("accepts default no on enter", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("\n"))
+		var out bytes.Buffer
+
+		got, err := promptBinaryChoice(reader, &out, nil, "Enable recurring schedule?", false, false)
+		if err != nil {
+			t.Fatalf("promptBinaryChoice returned error: %v", err)
+		}
+		if got {
+			t.Fatal("expected default no selection")
+		}
+	})
+
+	t.Run("requires explicit choice when configured", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("\n1\n"))
+		var out bytes.Buffer
+
+		got, err := promptBinaryChoice(reader, &out, nil, "Enable recurring schedule?", true, true)
+		if err != nil {
+			t.Fatalf("promptBinaryChoice returned error: %v", err)
+		}
+		if !got {
+			t.Fatal("expected explicit yes selection")
+		}
+		if !strings.Contains(out.String(), "Selection required.") {
+			t.Fatal("expected selection-required guidance after blank input")
+		}
+	})
+}
+
 func TestClearScreen(t *testing.T) {
 	var buf bytes.Buffer
 	clearScreen(&buf)
