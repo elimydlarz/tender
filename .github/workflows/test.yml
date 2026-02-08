@@ -1,4 +1,4 @@
-name: "tender/test"
+name: "tender/Test"
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
   tender:
     runs-on: ubuntu-latest
     env:
-      TENDER_NAME: "test"
+      TENDER_NAME: "Test"
       TENDER_AGENT: "TendTests"
       TENDER_PROMPT: ""
     steps:

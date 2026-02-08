@@ -17,31 +17,46 @@ const (
 	cDim     = "\033[2m"
 	cBold    = "\033[1m"
 	cWhite   = "\033[97m"
-	cBlue    = "\033[34m"
-	cCyan    = "\033[36m"
+	cBlue    = "\033[38;5;45m"
+	cCyan    = "\033[38;5;51m"
 	cGreen   = "\033[32m"
-	cYellow  = "\033[33m"
+	cYellow  = "\033[38;5;226m"
 	cRed     = "\033[31m"
-	cMagenta = "\033[35m"
-	cBgBlue  = "\033[44m"
-	cBgCyan  = "\033[46m"
-	cBgMag   = "\033[45m"
+	cMagenta = "\033[38;5;213m"
+	cPink    = "\033[38;5;205m"
+	cBgBlue  = "\033[48;5;17m"
+	cBgMag   = "\033[48;5;54m"
+	cBgBlack = "\033[48;5;16m"
+	cBgPink  = "\033[48;5;89m"
+)
+
+const (
+	rootFirstTenderKey = 2
+	rootLastTenderKey  = 7
+	rootPageUpKey      = 9
+	rootPageDownKey    = 0
+)
+
+const (
+	panelWidth = 86
 )
 
 func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 	r := bufio.NewReader(stdin)
 	tty := ttyFile(stdin)
+	offset := 0
 
 	for {
 		tenders, err := LoadTenders(root)
 		if err != nil {
 			return err
 		}
+		sort.Slice(tenders, func(i, j int) bool { return tenders[i].Name < tenders[j].Name })
+		offset = clampOffset(offset, len(tenders), rootTenderSlots())
 
-		drawHome(stdout, tenders)
-		drawActions(stdout)
+		drawHome(stdout, tenders, offset, tty)
 
-		action, err := promptMenuChoice(r, stdout, tty, "Choose 1/2/3/4: ")
+		action, err := promptMenuChoice(r, stdout, tty, "")
 		if err != nil {
 			return err
 		}
@@ -65,120 +80,88 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 			}
 			printOK(stdout, "Saved "+saved.WorkflowFile)
 
-		case "2":
-			selected, ok, err := selectTender(r, stdout, tty, tenders, "Edit")
-			if err != nil {
-				return err
-			}
-			if !ok {
-				continue
-			}
-
-			updated, ok, err := inputTender(r, stdout, root, selected, false, tty)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				continue
-			}
-
-			if err := UpdateTender(root, selected.Name, updated); err != nil {
-				printErr(stdout, err.Error())
-				acknowledge(r, stdout, tty)
-				continue
-			}
-			printOK(stdout, "Updated "+selected.WorkflowFile)
-
-		case "3":
-			selected, ok, err := selectTender(r, stdout, tty, tenders, "Delete")
-			if err != nil {
-				return err
-			}
-			if !ok {
-				continue
-			}
-
-			confirm, err := promptBinaryChoice(r, stdout, tty, fmt.Sprintf("Delete %q?", selected.Name), false, false)
-			if err != nil {
-				return err
-			}
-			if !confirm {
-				printErr(stdout, "Delete cancelled")
-				acknowledge(r, stdout, tty)
-				continue
-			}
-
-			if err := RemoveTender(root, selected.Name); err != nil {
-				return err
-			}
-			printOK(stdout, "Deleted "+selected.WorkflowFile)
-
-		case "4":
+		case "q", "Q":
 			return nil
+		case strconv.Itoa(rootPageUpKey):
+			if offset > 0 {
+				offset -= rootTenderSlots()
+			}
+		case strconv.Itoa(rootPageDownKey):
+			if offset+rootTenderSlots() < len(tenders) {
+				offset += rootTenderSlots()
+			}
 
 		default:
-			printErr(stdout, "Unknown selection")
-			acknowledge(r, stdout, tty)
+			if len(action) == 1 && action[0] >= '2' && action[0] <= '7' {
+				slot := int(action[0]-'0') - rootFirstTenderKey
+				selectedIndex := offset + slot
+				if selectedIndex >= 0 && selectedIndex < len(tenders) {
+					if err := runTenderMenu(r, stdout, root, tty, tenders[selectedIndex].Name); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			printErr(stdout, "Invalid selection.")
 		}
 	}
 }
 
-func drawHome(w io.Writer, tenders []Tender) {
-	clearScreen(w)
+func drawHome(w io.Writer, tenders []Tender, offset int, tty *os.File) {
+	w = beginScreen(w, tty, 22)
 	drawHero(w)
 	fmt.Fprintln(w)
 	drawMeta(w, len(tenders))
 	fmt.Fprintln(w)
 
+	fmt.Fprintf(w, "%sSelect Tender%s\n", colorLabel(cCyan), cReset)
+	rule(w, '.')
+	fmt.Fprintf(w, "  %s  Create tender\n", numberChip(1))
+	for i := 0; i < rootTenderSlots(); i++ {
+		key := rootFirstTenderKey + i
+		idx := offset + i
+		if idx >= 0 && idx < len(tenders) {
+			t := tenders[idx]
+			fmt.Fprintf(w, "  %s  %-20s %-30s\n", numberChip(key), t.Name, paintTrigger(TriggerSummary(t.Cron, t.Manual), t.Cron, t.Manual))
+			continue
+		}
+		fmt.Fprintf(w, "  %s  %s(empty)%s\n", numberChip(key), cDim, cReset)
+	}
+	fmt.Fprintf(w, "  %s  Scroll up\n", numberChip(rootPageUpKey))
+	fmt.Fprintf(w, "  %s  Scroll down\n", numberChip(rootPageDownKey))
+	fmt.Fprintf(w, "  %s  Exit\n", keyChip("q"))
+	rule(w, '.')
 	if len(tenders) == 0 {
-		fmt.Fprintf(w, "%sNo managed tender workflows found.%s\n", cDim, cReset)
-		fmt.Fprintln(w)
+		fmt.Fprintf(w, "%sShowing 0 tenders%s\n", cDim, cReset)
 		return
 	}
-
-	sort.Slice(tenders, func(i, j int) bool { return tenders[i].Name < tenders[j].Name })
-
-	rule(w, '-')
-	fmt.Fprintf(w, "%s%-20s %-18s %-31s %s%s\n", cBold, "Name", "Agent", "Trigger", "Workflow", cReset)
-	rule(w, '-')
-	for _, t := range tenders {
-		trigger := paintTrigger(TriggerSummary(t.Cron, t.Manual), t.Cron, t.Manual)
-		fmt.Fprintf(w, "%-20s %-18s %-31s %s\n", t.Name, t.Agent, trigger, t.WorkflowFile)
-	}
-	rule(w, '-')
+	pageSize := rootTenderSlots()
+	start := offset + 1
+	end := min(offset+pageSize, len(tenders))
+	page := (offset / pageSize) + 1
+	pages := (len(tenders) + pageSize - 1) / pageSize
+	fmt.Fprintf(w, "%sShowing %d-%d of %d (page %d/%d)%s\n", cDim, start, end, len(tenders), page, pages, cReset)
 }
 
 func drawHero(w io.Writer) {
 	rule(w, '=')
-	paintBand(w, cBgBlue, " TENDER COMMAND DECK ")
-	fmt.Fprintf(w, "%s%s   _______  _______  _   _  ______   _______  ______ %s\n", cBold, cBlue, cReset)
-	fmt.Fprintf(w, "%s%s  |__   __||__   __|| \\ | ||  _  \\ |  _____||  __  \\\\%s\n", cBold, cBlue, cReset)
-	fmt.Fprintf(w, "%s%s     | |      | |   |  \\| || | | | | |__    | |__) |%s\n", cBold, cCyan, cReset)
-	fmt.Fprintf(w, "%s%s     | |      | |   | . ` || | | | |  __|   |  _  / %s\n", cBold, cCyan, cReset)
-	fmt.Fprintf(w, "%s%s     | |      | |   | |\\  || |_| | | |____  | | \\ \\ %s\n", cBold, cMagenta, cReset)
-	fmt.Fprintf(w, "%s%s     |_|      |_|   |_| \\_||_____/  |______| |_|  \\_\\\\%s\n", cBold, cMagenta, cReset)
-	paintBand(w, cBgCyan, " Autonomous OpenCode scheduler for GitHub Actions ")
+	paintBand(w, cBgBlack, cWhite, "                                                                                ")
+	paintBand(w, cBgBlue, cWhite, "                                    TENDER                                      ")
+	paintBand(w, cBgMag, cWhite, "                              VAPORWAVE CONTROL                                 ")
+	paintBand(w, cBgPink, cWhite, "                  Autonomous OpenCode runs in GitHub Actions                    ")
+	paintBand(w, cBgBlue, cWhite, "                                                                                ")
+	paintBand(w, cBgBlack, cWhite, "                                                                                ")
 	rule(w, '=')
 }
 
 func drawMeta(w io.Writer, count int) {
-	fmt.Fprintf(w, "%s%s State %s GitHub Actions workflows (.github/workflows)\n", cBgMag, cWhite, cReset)
-	fmt.Fprintf(w, "%s%s Mode  %s Autonomous commits to main\n", cBgMag, cWhite, cReset)
-	fmt.Fprintf(w, "%s%s Count %s %d managed tender(s)\n", cBgMag, cWhite, cReset, count)
-}
-
-func drawActions(w io.Writer) {
-	fmt.Fprintf(w, "%sAction Deck%s\n", colorLabel(cCyan), cReset)
-	rule(w, '.')
-	fmt.Fprintf(w, "  %s1%s  Forge new tender       %s(create workflow)%s\n", cBold, cReset, cDim, cReset)
-	fmt.Fprintf(w, "  %s2%s  Tune existing tender   %s(update schedule/agent)%s\n", cBold, cReset, cDim, cReset)
-	fmt.Fprintf(w, "  %s3%s  Retire tender          %s(delete workflow)%s\n", cBold, cReset, cDim, cReset)
-	fmt.Fprintf(w, "  %s4%s  Exit                   %s(close deck)%s\n", cBold, cReset, cDim, cReset)
-	rule(w, '.')
+	fmt.Fprintf(w, "%s%s%s STATE %s GitHub Actions workflows (.github/workflows)\n", cBgMag, cWhite, cBold, cReset)
+	fmt.Fprintf(w, "%s%s%s MODE  %s Autonomous commits to main\n", cBgBlue, cWhite, cBold, cReset)
+	fmt.Fprintf(w, "%s%s%s COUNT %s %d total tender(s)\n", cBgPink, cWhite, cBold, cReset, count)
 }
 
 func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew bool, tty *os.File) (Tender, bool, error) {
-	clearScreen(w)
+	w = beginScreen(w, tty, 24)
 	if isNew {
 		fmt.Fprintf(w, "%sCreate Tender%s\n", colorLabel(cCyan), cReset)
 	} else {
@@ -515,7 +498,7 @@ func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, 
 	fmt.Fprintf(w, "%s%s Tender%s\n", colorLabel(cCyan), action, cReset)
 	rule(w, '.')
 	for i, t := range tenders {
-		fmt.Fprintf(w, "  %2d) %-20s %-30s %s\n", i+1, t.Name, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
+		fmt.Fprintf(w, "  %s %-20s %-30s %s\n", numberChip(i+1), t.Name, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
 	}
 	rule(w, '.')
 
@@ -544,6 +527,76 @@ func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, 
 			return tenders[n-1], true, nil
 		}
 		printErr(w, "Invalid selection.")
+	}
+}
+
+func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name string) error {
+	current := name
+	for {
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			return err
+		}
+		sort.Slice(tenders, func(i, j int) bool { return tenders[i].Name < tenders[j].Name })
+		idx := findTenderIndex(tenders, current)
+		if idx < 0 {
+			printErr(w, "Tender no longer exists.")
+			return nil
+		}
+		selected := tenders[idx]
+		sw := beginScreen(w, tty, 18)
+		drawHero(sw)
+		fmt.Fprintln(sw)
+		fmt.Fprintf(sw, "%sTender%s %s%s%s\n", colorLabel(cPink), cReset, cBold, selected.Name, cReset)
+		fmt.Fprintf(sw, "%sAgent:%s %s\n", cDim, cReset, selected.Agent)
+		fmt.Fprintf(sw, "%sTrigger:%s %s\n", cDim, cReset, paintTrigger(TriggerSummary(selected.Cron, selected.Manual), selected.Cron, selected.Manual))
+		fmt.Fprintf(sw, "%sWorkflow:%s %s\n", cDim, cReset, selected.WorkflowFile)
+		fmt.Fprintln(sw)
+		rule(sw, '.')
+		fmt.Fprintf(sw, "  %s  Back\n", numberChip(1))
+		fmt.Fprintf(sw, "  %s  Edit\n", numberChip(2))
+		fmt.Fprintf(sw, "  %s  Delete\n", numberChip(3))
+		rule(sw, '.')
+
+		action, err := promptMenuChoice(r, sw, tty, "")
+		if err != nil {
+			return err
+		}
+		switch strings.TrimSpace(action) {
+		case "1":
+			return nil
+		case "2":
+			updated, ok, err := inputTender(r, w, root, selected, false, tty)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			if err := UpdateTender(root, selected.Name, updated); err != nil {
+				printErr(sw, err.Error())
+				acknowledge(r, sw, tty)
+				continue
+			}
+			current = updated.Name
+			printOK(sw, "Updated "+selected.WorkflowFile)
+		case "3":
+			confirm, err := promptBinaryChoice(r, sw, tty, fmt.Sprintf("Delete %q?", selected.Name), false, false)
+			if err != nil {
+				return err
+			}
+			if !confirm {
+				printErr(sw, "Delete cancelled")
+				continue
+			}
+			if err := RemoveTender(root, selected.Name); err != nil {
+				return err
+			}
+			printOK(sw, "Deleted "+selected.WorkflowFile)
+			return nil
+		default:
+			printErr(sw, "Invalid selection.")
+		}
 	}
 }
 
@@ -576,11 +629,11 @@ func selectNumberedOption(r *bufio.Reader, w io.Writer, tty *os.File, title stri
 	fmt.Fprintf(w, "%s%s%s\n", colorLabel(cCyan), title, cReset)
 	rule(w, '.')
 	for i, option := range options {
-		marker := " "
-		if i == defaultIndex {
-			marker = "*"
+		line := option
+		if hasDefault && i == defaultIndex {
+			line = fmt.Sprintf("%s %s(default)%s", option, cDim, cReset)
 		}
-		fmt.Fprintf(w, "  %d) %s %s\n", i+1, marker, option)
+		fmt.Fprintf(w, "  %s  %s\n", numberChip(i+1), line)
 	}
 	rule(w, '.')
 
@@ -815,8 +868,8 @@ func colorLabel(color string) string {
 	return color + cBold
 }
 
-func paintBand(w io.Writer, bg string, text string) {
-	fmt.Fprintf(w, "%s%s%s%s%s\n", bg, cWhite, cBold, text, cReset)
+func paintBand(w io.Writer, bg string, fg string, text string) {
+	fmt.Fprintf(w, "%s%s%s%s%s\n", bg, fg, cBold, text, cReset)
 }
 
 func paintTrigger(summary, cron string, manual bool) string {
@@ -830,4 +883,149 @@ func paintTrigger(summary, cron string, manual bool) string {
 	default:
 		return summary
 	}
+}
+
+func numberChip(n int) string {
+	bgs := []string{cBgBlue, cBgMag, cBgPink, cBgBlue, cBgMag}
+	slot := n
+	if slot <= 0 {
+		slot = len(bgs)
+	}
+	bg := bgs[(slot-1)%len(bgs)]
+	return fmt.Sprintf("%s%s%s %d %s", bg, cWhite, cBold, n, cReset)
+}
+
+func keyChip(key string) string {
+	return fmt.Sprintf("%s%s%s %s %s", cBgBlack, cWhite, cBold, key, cReset)
+}
+
+type prefixedWriter struct {
+	w           io.Writer
+	prefix      string
+	atLineStart bool
+}
+
+func (p *prefixedWriter) Write(b []byte) (int, error) {
+	if len(p.prefix) == 0 {
+		return p.w.Write(b)
+	}
+	total := 0
+	for len(b) > 0 {
+		if p.atLineStart {
+			if _, err := io.WriteString(p.w, p.prefix); err != nil {
+				return total, err
+			}
+			p.atLineStart = false
+		}
+		i := bytesIndexByte(b, '\n')
+		if i < 0 {
+			n, err := p.w.Write(b)
+			total += n
+			return total, err
+		}
+		n, err := p.w.Write(b[:i+1])
+		total += n
+		if err != nil {
+			return total, err
+		}
+		p.atLineStart = true
+		b = b[i+1:]
+	}
+	return total, nil
+}
+
+func beginScreen(w io.Writer, tty *os.File, contentHeight int) io.Writer {
+	rows, cols := terminalSize(tty)
+	if rows <= 0 {
+		rows = 34
+	}
+	if cols <= 0 {
+		cols = 120
+	}
+
+	clearScreen(w)
+	line := cBgBlack + strings.Repeat(" ", cols) + cReset + "\n"
+	for i := 0; i < rows; i++ {
+		fmt.Fprint(w, line)
+	}
+	fmt.Fprint(w, "\033[H")
+
+	topPad := 0
+	if rows > contentHeight {
+		topPad = (rows - contentHeight) / 2
+	}
+	for i := 0; i < topPad; i++ {
+		fmt.Fprintln(w)
+	}
+
+	leftPad := 0
+	if cols > panelWidth {
+		leftPad = (cols - panelWidth) / 2
+	}
+	if leftPad <= 0 {
+		return w
+	}
+	return &prefixedWriter{
+		w:           w,
+		prefix:      strings.Repeat(" ", leftPad),
+		atLineStart: true,
+	}
+}
+
+func terminalSize(tty *os.File) (rows int, cols int) {
+	if tty == nil {
+		return 0, 0
+	}
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = tty
+	var out strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		return 0, 0
+	}
+	parts := strings.Fields(strings.TrimSpace(out.String()))
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	r, errR := strconv.Atoi(parts[0])
+	c, errC := strconv.Atoi(parts[1])
+	if errR != nil || errC != nil {
+		return 0, 0
+	}
+	return r, c
+}
+
+func bytesIndexByte(b []byte, c byte) int {
+	for i, v := range b {
+		if v == c {
+			return i
+		}
+	}
+	return -1
+}
+
+func rootTenderSlots() int {
+	return rootLastTenderKey - rootFirstTenderKey + 1
+}
+
+func clampOffset(offset, total, pageSize int) int {
+	if offset < 0 {
+		return 0
+	}
+	if total <= 0 {
+		return 0
+	}
+	max := ((total - 1) / pageSize) * pageSize
+	if offset > max {
+		return max
+	}
+	return offset
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

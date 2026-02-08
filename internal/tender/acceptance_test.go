@@ -134,7 +134,7 @@ func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 	script := strings.Join([]string{
 		"set timeout 20",
 		"spawn " + cli,
-		"expect \"Choose 1/2/3/4:\"",
+		"expect \"Select Tender\"",
 		"send \"1\\r\"",
 		"expect \"Name:\"",
 		"send \"My Tender\\r\"",
@@ -148,8 +148,8 @@ func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
 		"expect \"OK:\"",
-		"expect \"Choose 1/2/3/4:\"",
-		"send \"4\\r\"",
+		"expect \"Select Tender\"",
+		"send \"q\\r\"",
 		"expect eof",
 	}, "\n")
 
@@ -256,7 +256,7 @@ func runInteractiveAdd(t *testing.T, fixture string, cli string, name string) {
 		"3",
 		"4",
 		"3",
-		"4",
+		"q",
 	}, "\n")
 	_ = runCmdWithStdin(t, fixture, input, cli)
 }
