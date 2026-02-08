@@ -103,13 +103,18 @@ func RenderWorkflow(t Tender) string {
 		b.WriteString("        default: \"\"\n")
 		b.WriteString("        type: string\n")
 	}
+	if t.Push {
+		b.WriteString("  push:\n")
+		b.WriteString("    branches:\n")
+		b.WriteString("      - main\n")
+	}
 	if strings.TrimSpace(t.Cron) != "" {
 		b.WriteString("  schedule:\n")
 		b.WriteString("    - cron: ")
 		b.WriteString(strconv.Quote(strings.TrimSpace(t.Cron)))
 		b.WriteString("\n")
 	}
-	if !t.Manual && strings.TrimSpace(t.Cron) == "" {
+	if !t.Manual && !t.Push && strings.TrimSpace(t.Cron) == "" {
 		b.WriteString("  workflow_dispatch:\n")
 	}
 
@@ -120,6 +125,10 @@ func RenderWorkflow(t Tender) string {
 	b.WriteString("  cancel-in-progress: false\n\n")
 	b.WriteString("jobs:\n")
 	b.WriteString("  tender:\n")
+	if t.Push {
+		// Prevent circular runs when this workflow pushes back to main.
+		b.WriteString("    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}\n")
+	}
 	b.WriteString("    runs-on: ubuntu-latest\n")
 	b.WriteString("    env:\n")
 	b.WriteString("      TENDER_NAME: ")
@@ -158,6 +167,9 @@ func RenderWorkflow(t Tender) string {
 	b.WriteString("          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n")
 	b.WriteString("        run: |\n")
 	b.WriteString("          set -euo pipefail\n")
+	b.WriteString("          cd \"$GITHUB_WORKSPACE\"\n")
+	b.WriteString("          if [ -f \"$GITHUB_WORKSPACE/opencode.json\" ]; then export OPENCODE_CONFIG=\"$GITHUB_WORKSPACE/opencode.json\"; fi\n")
+	b.WriteString("          if [ -d \"$GITHUB_WORKSPACE/.opencode\" ]; then export OPENCODE_CONFIG_DIR=\"$GITHUB_WORKSPACE/.opencode\"; fi\n")
 	b.WriteString("          DISPATCH_PROMPT=\"${{ github.event_name == 'workflow_dispatch' && inputs.prompt || '' }}\"\n")
 	b.WriteString("          RUN_PROMPT=\"${DISPATCH_PROMPT:-}\"\n")
 	b.WriteString("          if [ -z \"${RUN_PROMPT}\" ]; then\n")
@@ -208,6 +220,8 @@ func parseTenderWorkflow(content string) (Tender, bool) {
 			}
 		case trim == "workflow_dispatch:":
 			t.Manual = true
+		case trim == "push:":
+			t.Push = true
 		case strings.HasPrefix(trim, "- cron:"):
 			t.Cron = parseQuotedValue(strings.TrimSpace(strings.TrimPrefix(trim, "- cron:")))
 		case strings.HasPrefix(trim, "TENDER_AGENT:"):
@@ -259,7 +273,7 @@ func ValidateTender(t Tender) error {
 			return fmt.Errorf("cron must have 5 fields")
 		}
 	}
-	if !t.Manual && strings.TrimSpace(t.Cron) == "" {
+	if !t.Manual && !t.Push && strings.TrimSpace(t.Cron) == "" {
 		return fmt.Errorf("enable manual or set a schedule")
 	}
 	return nil
@@ -308,12 +322,12 @@ func PrintList(root string, stdout io.Writer) error {
 	}
 	_, _ = fmt.Fprintln(stdout, "NAME\tAGENT\tTRIGGER\tWORKFLOW")
 	for _, t := range tenders {
-		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", t.Name, t.Agent, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", t.Name, t.Agent, TriggerSummary(t.Cron, t.Manual, t.Push), t.WorkflowFile)
 	}
 	return nil
 }
 
-func TriggerSummary(cron string, manual bool) string {
+func TriggerSummary(cron string, manual bool, push bool) string {
 	schedule := ""
 	if strings.TrimSpace(cron) != "" {
 		if d, ok := scheduleDefaultsFromCron(cron); ok {
@@ -334,16 +348,20 @@ func TriggerSummary(cron string, manual bool) string {
 		}
 	}
 
-	switch {
-	case schedule != "" && manual:
-		return schedule + " + on-demand"
-	case schedule != "":
-		return schedule
-	case manual:
-		return "on-demand"
-	default:
+	parts := make([]string, 0, 3)
+	if schedule != "" {
+		parts = append(parts, schedule)
+	}
+	if push {
+		parts = append(parts, "on-push(main)")
+	}
+	if manual {
+		parts = append(parts, "on-demand")
+	}
+	if len(parts) == 0 {
 		return "none"
 	}
+	return strings.Join(parts, " + ")
 }
 
 func weekdayName(day int) string {

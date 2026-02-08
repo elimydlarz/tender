@@ -38,7 +38,7 @@ Tender writes/updates a managed workflow under `.github/workflows/`.
 ## How It Works
 
 - Uses GitHub Actions workflows as the source of truth.
-- Detects OpenCode primary agents from local OpenCode config.
+- Detects OpenCode agents via `opencode agent list`.
 - Generates workflows that run `opencode run --agent ...`.
 - Supports on-demand and scheduled runs.
 - Uses plain-English trigger display in the CLI.
@@ -53,3 +53,21 @@ Tender writes/updates a managed workflow under `.github/workflows/`.
 ## Contributing
 
 Contributor/developer docs are in `CONTRIBUTING.md`.
+
+## Maintainer Release
+
+One command:
+
+```bash
+make publish VERSION=0.2.0
+```
+
+What it does:
+- Runs `check-fast` and npm pack smoke checks.
+- Bumps `package.json` version.
+- Commits `release: vX.Y.Z`.
+- Tags `vX.Y.Z` and pushes commit + tag.
+- Triggers GitHub Actions `release` workflow to build binaries and publish `@tender/cli`.
+
+Repository secret required for npm publishing:
+- `NPM_TOKEN`

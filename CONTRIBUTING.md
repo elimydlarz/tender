@@ -56,6 +56,24 @@ make npx-pack-smoke
 make npx-local
 ```
 
+## Releasing
+
+Single command release:
+
+```bash
+make publish VERSION=0.2.0
+```
+
+Dry run (no push):
+
+```bash
+make release-dry-run VERSION=0.2.0
+```
+
+Release workflow requirements:
+- GitHub repository secret `NPM_TOKEN` must be set.
+- Tag version must match `package.json` version.
+
 ## Workflow Contract
 
 Managed workflows should keep these properties:

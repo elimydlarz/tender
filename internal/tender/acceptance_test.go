@@ -141,9 +141,9 @@ func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 		"expect \"Agent\"",
 		"expect -re {Choose .*:}",
 		"send \"1\\r\"",
-		"expect \"Allow on-demand run from Actions UI?\"",
+		"expect \"Run on every push to main?\"",
 		"expect -re {Choose .*:}",
-		"send \"1\\r\"",
+		"send \"2\\r\"",
 		"expect \"Enable recurring schedule?\"",
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
@@ -177,6 +177,7 @@ func newFixtureRepo(t *testing.T, name string) string {
 	t.Cleanup(func() {
 		_ = os.RemoveAll(fixture)
 	})
+	installFakeOpenCode(t, fixture)
 	return fixture
 }
 
@@ -198,6 +199,7 @@ func runCmd(t *testing.T, dir string, name string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	withFixturePath(cmd, dir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("command failed: %s %s\nerror: %v\noutput:\n%s", name, strings.Join(args, " "), err, string(out))
@@ -209,12 +211,58 @@ func runCmdWithStdin(t *testing.T, dir string, stdin string, name string, args .
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	withFixturePath(cmd, dir)
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("command failed: %s %s\nerror: %v\noutput:\n%s", name, strings.Join(args, " "), err, string(out))
 	}
 	return string(out)
+}
+
+func withFixturePath(cmd *exec.Cmd, dir string) {
+	bin := filepath.Join(dir, ".tender", "bin")
+	entry, err := os.Stat(filepath.Join(bin, "opencode"))
+	if err != nil || entry.IsDir() {
+		return
+	}
+
+	base := os.Environ()
+	found := false
+	for i, kv := range base {
+		if strings.HasPrefix(kv, "PATH=") {
+			base[i] = "PATH=" + bin + string(os.PathListSeparator) + strings.TrimPrefix(kv, "PATH=")
+			found = true
+			break
+		}
+	}
+	if !found {
+		base = append(base, "PATH="+bin)
+	}
+	cmd.Env = base
+}
+
+func installFakeOpenCode(t *testing.T, fixture string) {
+	t.Helper()
+	binDir := filepath.Join(fixture, ".tender", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll fake opencode dir: %v", err)
+	}
+	script := `#!/bin/sh
+if [ "$1" = "agent" ] && [ "$2" = "list" ]; then
+cat <<'EOF'
+Build primary
+TestReviewer primary
+EOF
+exit 0
+fi
+echo "unsupported fake opencode command: $*" >&2
+exit 1
+`
+	path := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile fake opencode: %v", err)
+	}
 }
 
 func projectRoot(t *testing.T) string {
@@ -245,7 +293,7 @@ func buildTenderCLI(t *testing.T) string {
 func runInteractiveAdd(t *testing.T, fixture string, cli string, name string) {
 	t.Helper()
 	// Scripted input for interactive flow:
-	// action(add) -> name -> agent(default) -> on-demand(default yes) -> enable schedule -> weekly ->
+	// action(add) -> name -> agent(default) -> push(default no) -> enable schedule -> weekly ->
 	// monday -> 09:00 -> continue -> quit.
 	input := strings.Join([]string{
 		"1",

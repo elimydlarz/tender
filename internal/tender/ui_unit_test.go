@@ -900,9 +900,10 @@ func TestColorLabel(t *testing.T) {
 func TestPaintBand(t *testing.T) {
 	var buf bytes.Buffer
 	bg := cBgBlue
+	fg := cWhite
 	text := "TEST"
 
-	paintBand(&buf, bg, text)
+	paintBand(&buf, bg, fg, text)
 
 	output := buf.String()
 	if !strings.Contains(output, bg) {
@@ -924,7 +925,7 @@ func TestPaintBand(t *testing.T) {
 
 func TestPaintTrigger(t *testing.T) {
 	t.Run("cron plus manual", func(t *testing.T) {
-		result := paintTrigger("daily at 09:00 UTC", "0 9 * * *", true)
+		result := paintTrigger("daily at 09:00 UTC + on-demand", "0 9 * * *", true, false)
 		if !strings.Contains(result, cCyan) {
 			t.Fatal("expected cyan color for cron+manual")
 		}
@@ -934,7 +935,7 @@ func TestPaintTrigger(t *testing.T) {
 	})
 
 	t.Run("cron only", func(t *testing.T) {
-		result := paintTrigger("daily at 09:00 UTC", "0 9 * * *", false)
+		result := paintTrigger("daily at 09:00 UTC", "0 9 * * *", false, false)
 		if !strings.Contains(result, cMagenta) {
 			t.Fatal("expected magenta color for cron only")
 		}
@@ -944,7 +945,7 @@ func TestPaintTrigger(t *testing.T) {
 	})
 
 	t.Run("manual only", func(t *testing.T) {
-		result := paintTrigger("on-demand", "", true)
+		result := paintTrigger("on-demand", "", true, false)
 		if !strings.Contains(result, cGreen) {
 			t.Fatal("expected green color for manual only")
 		}
@@ -953,9 +954,19 @@ func TestPaintTrigger(t *testing.T) {
 		}
 	})
 
+	t.Run("push only", func(t *testing.T) {
+		result := paintTrigger("on-push(main)", "", false, true)
+		if !strings.Contains(result, cBlue) {
+			t.Fatal("expected blue color for push only")
+		}
+		if !strings.Contains(result, "on-push(main)") {
+			t.Fatal("expected trigger text in output")
+		}
+	})
+
 	t.Run("no trigger", func(t *testing.T) {
-		result := paintTrigger("none", "", false)
-		if strings.Contains(result, cCyan) || strings.Contains(result, cMagenta) || strings.Contains(result, cGreen) {
+		result := paintTrigger("none", "", false, false)
+		if strings.Contains(result, cCyan) || strings.Contains(result, cMagenta) || strings.Contains(result, cGreen) || strings.Contains(result, cBlue) {
 			t.Fatal("expected no color for no trigger")
 		}
 		if !strings.Contains(result, "none") {

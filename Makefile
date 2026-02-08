@@ -6,7 +6,7 @@ BIN_DIR := $(ROOT)/bin
 BIN := $(BIN_DIR)/tender
 NPM_CACHE_DIR := $(ROOT)/.tender/npm-cache
 
-.PHONY: help build run npx-local npx-smoke npx-pack-smoke fmt fmt-check lint test acceptance check-fast check
+.PHONY: help build run npx-local npx-smoke npx-pack-smoke fmt fmt-check lint test acceptance check-fast check publish release-dry-run
 
 help:
 	@echo "tender project commands"
@@ -23,6 +23,8 @@ help:
 	@echo "  make acceptance   Run acceptance tests (uses act + git)"
 	@echo "  make check-fast   Run fmt-check + lint + test + build"
 	@echo "  make check        Run full verification (check-fast + acceptance)"
+	@echo "  make publish VERSION=x.y.z  Cut and push a release tag (publishes via CI)"
+	@echo "  make release-dry-run VERSION=x.y.z  Validate release flow without pushing"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -80,3 +82,9 @@ acceptance:
 check-fast: fmt-check lint test build
 
 check: check-fast acceptance
+
+publish:
+	@./scripts/publish.sh "$(VERSION)"
+
+release-dry-run:
+	@DRY_RUN=1 ./scripts/publish.sh "$(VERSION)"

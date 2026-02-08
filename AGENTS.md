@@ -12,7 +12,7 @@ These instructions apply to the entire repository.
 - `tender` is a Go CLI/TUI for managing autonomous OpenCode runs via GitHub Actions.
 - GitHub Actions workflow files are the source of truth for tender state.
 - No sidecar metadata files are used for tender definitions.
-- Interactive agent selection should prefer locally configured OpenCode primary agents.
+- Interactive agent selection must use `opencode agent list` (no local parsing fallback).
 - Dogfooding OpenCode config is checked into this repo (`opencode.json`, `.opencode/agents/`).
 
 ## Code layout
@@ -38,6 +38,8 @@ These instructions apply to the entire repository.
   - `make acceptance`: run acceptance tests (`act` + `git`)
   - `make check-fast`: run `fmt-check + lint + test + build`
   - `make check`: run full verification (`check-fast + acceptance`)
+  - `make publish VERSION=x.y.z`: run checks, bump package version, tag, and push release
+  - `make release-dry-run VERSION=x.y.z`: same release flow without pushing
 - Direct commands still supported:
   - Build: `GOCACHE=$PWD/.gocache go build ./...`
   - Unit/default tests: `GOCACHE=$PWD/.gocache go test ./...`

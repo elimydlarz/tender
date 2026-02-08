@@ -63,7 +63,7 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 
 		switch strings.TrimSpace(action) {
 		case "1":
-			base := Tender{Agent: "Build", Manual: true}
+			base := Tender{Agent: "Build", Manual: true, Push: false}
 			t, ok, err := inputTender(r, stdout, root, base, true, tty)
 			if err != nil {
 				return err
@@ -122,7 +122,7 @@ func drawHome(w io.Writer, tenders []Tender, offset int, tty *os.File) {
 		idx := offset + i
 		if idx >= 0 && idx < len(tenders) {
 			t := tenders[idx]
-			fmt.Fprintf(w, "  %s  %-20s %-30s\n", numberChip(key), t.Name, paintTrigger(TriggerSummary(t.Cron, t.Manual), t.Cron, t.Manual))
+			fmt.Fprintf(w, "  %s  %-20s %-30s\n", numberChip(key), t.Name, paintTrigger(TriggerSummary(t.Cron, t.Manual, t.Push), t.Cron, t.Manual, t.Push))
 			continue
 		}
 		fmt.Fprintf(w, "  %s  %s(empty)%s\n", numberChip(key), cDim, cReset)
@@ -193,7 +193,7 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 		return Tender{}, false, err
 	}
 
-	manual, err := promptBinaryChoice(r, w, tty, "Allow on-demand run from Actions UI?", base.Manual, false)
+	push, err := promptBinaryChoice(r, w, tty, "Run on every push to main?", base.Push, false)
 	if err != nil {
 		return Tender{}, false, err
 	}
@@ -211,7 +211,7 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			fmt.Fprintf(w, "%sWarning:%s existing schedule is unsupported in presets; choose a new one.\n", cYellow, cReset)
 		}
 
-		defaultMode := 0
+		defaultMode := 1
 		if hasDefaults {
 			switch defaults.Mode {
 			case "hourly":
@@ -295,7 +295,7 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			cron = built
 		}
 
-		fmt.Fprintf(w, "%sSchedule:%s %s\n", cDim, cReset, TriggerSummary(cron, false))
+		fmt.Fprintf(w, "%sSchedule:%s %s\n", cDim, cReset, TriggerSummary(cron, true, push))
 	} else {
 		cron = ""
 	}
@@ -305,7 +305,8 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 		Agent:        strings.TrimSpace(agent),
 		Prompt:       strings.TrimSpace(base.Prompt),
 		Cron:         strings.TrimSpace(cron),
-		Manual:       manual,
+		Manual:       true,
+		Push:         push,
 		WorkflowFile: base.WorkflowFile,
 	}
 
@@ -466,11 +467,10 @@ func printOK(w io.Writer, msg string) {
 func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty *os.File) (string, error) {
 	agents, err := DiscoverPrimaryAgents(root)
 	if err != nil {
-		fmt.Fprintf(w, "%sWarning:%s unable to discover OpenCode agents (%v). Falling back to Build.\n", cYellow, cReset, err)
-		agents = []string{"Build"}
+		return "", fmt.Errorf("unable to discover OpenCode agents: %w", err)
 	}
 	if len(agents) == 0 {
-		agents = []string{"Build"}
+		return "", fmt.Errorf("no OpenCode agents found")
 	}
 
 	defaultIndex := 0
@@ -498,7 +498,7 @@ func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, 
 	fmt.Fprintf(w, "%s%s Tender%s\n", colorLabel(cCyan), action, cReset)
 	rule(w, '.')
 	for i, t := range tenders {
-		fmt.Fprintf(w, "  %s %-20s %-30s %s\n", numberChip(i+1), t.Name, TriggerSummary(t.Cron, t.Manual), t.WorkflowFile)
+		fmt.Fprintf(w, "  %s %-20s %-30s %s\n", numberChip(i+1), t.Name, TriggerSummary(t.Cron, t.Manual, t.Push), t.WorkflowFile)
 	}
 	rule(w, '.')
 
@@ -549,7 +549,7 @@ func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name
 		fmt.Fprintln(sw)
 		fmt.Fprintf(sw, "%sTender%s %s%s%s\n", colorLabel(cPink), cReset, cBold, selected.Name, cReset)
 		fmt.Fprintf(sw, "%sAgent:%s %s\n", cDim, cReset, selected.Agent)
-		fmt.Fprintf(sw, "%sTrigger:%s %s\n", cDim, cReset, paintTrigger(TriggerSummary(selected.Cron, selected.Manual), selected.Cron, selected.Manual))
+		fmt.Fprintf(sw, "%sTrigger:%s %s\n", cDim, cReset, paintTrigger(TriggerSummary(selected.Cron, selected.Manual, selected.Push), selected.Cron, selected.Manual, selected.Push))
 		fmt.Fprintf(sw, "%sWorkflow:%s %s\n", cDim, cReset, selected.WorkflowFile)
 		fmt.Fprintln(sw)
 		rule(sw, '.')
@@ -872,12 +872,20 @@ func paintBand(w io.Writer, bg string, fg string, text string) {
 	fmt.Fprintf(w, "%s%s%s%s%s\n", bg, fg, cBold, text, cReset)
 }
 
-func paintTrigger(summary, cron string, manual bool) string {
+func paintTrigger(summary, cron string, manual bool, push bool) string {
 	switch {
+	case cron != "" && manual && push:
+		return cCyan + summary + cReset
 	case cron != "" && manual:
 		return cCyan + summary + cReset
+	case cron != "" && push:
+		return cPink + summary + cReset
 	case cron != "":
 		return cMagenta + summary + cReset
+	case push && manual:
+		return cBlue + summary + cReset
+	case push:
+		return cBlue + summary + cReset
 	case manual:
 		return cGreen + summary + cReset
 	default:

@@ -10,6 +10,7 @@ type Tender struct {
 	Prompt       string
 	Cron         string
 	Manual       bool
+	Push         bool
 	WorkflowFile string
 }
 

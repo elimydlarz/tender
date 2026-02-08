@@ -220,19 +220,21 @@ func BenchmarkTriggerSummary(b *testing.B) {
 	testCases := []struct {
 		cron   string
 		manual bool
+		push   bool
 	}{
-		{"", true},                        // Manual only
-		{"0 9 * * *", false},              // Daily only
-		{"30 14 * * 1,3,5", true},         // Weekly + manual
-		{"*/15 * * * *", false},           // Hourly
-		{"0 12 * * 0,1,2,3,4,5,6", false}, // Daily all days
+		{"", true, false},                        // Manual only
+		{"0 9 * * *", false, false},              // Daily only
+		{"30 14 * * 1,3,5", true, false},         // Weekly + manual
+		{"*/15 * * * *", false, false},           // Hourly
+		{"0 12 * * 0,1,2,3,4,5,6", false, false}, // Daily all days
+		{"", true, true},                         // Manual + push
 	}
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		tc := testCases[i%len(testCases)]
-		_ = TriggerSummary(tc.cron, tc.manual)
+		_ = TriggerSummary(tc.cron, tc.manual, tc.push)
 	}
 }
 
