@@ -3,6 +3,7 @@ package tender
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -834,6 +835,17 @@ func TestPrompt(t *testing.T) {
 
 		if result != "test input" {
 			t.Fatalf("expected 'test input', got %q", result)
+		}
+	})
+
+	t.Run("q requests quit", func(t *testing.T) {
+		input := "q\n"
+		reader := bufio.NewReader(strings.NewReader(input))
+		var buf bytes.Buffer
+
+		_, err := prompt(reader, &buf, "Enter: ")
+		if !errors.Is(err, errQuitRequested) {
+			t.Fatalf("expected quit error, got %v", err)
 		}
 	})
 }

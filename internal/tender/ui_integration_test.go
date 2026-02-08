@@ -58,6 +58,54 @@ func TestRunInteractive(t *testing.T) {
 			t.Fatal("expected empty state summary")
 		}
 	})
+
+	t.Run("quits from create screen", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// open create flow, then quit at name prompt
+		stdin := strings.NewReader("1\nq\n")
+		var stdout bytes.Buffer
+
+		err := RunInteractive(root, stdin, &stdout)
+		if err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("LoadTenders returned error: %v", err)
+		}
+		if len(tenders) != 0 {
+			t.Fatalf("expected no tenders after quitting create flow, got %d", len(tenders))
+		}
+	})
+
+	t.Run("quits from continue screen", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		// open create flow, submit empty name (shows continue screen), then quit.
+		stdin := strings.NewReader("1\n\nq\n")
+		var stdout bytes.Buffer
+
+		err := RunInteractive(root, stdin, &stdout)
+		if err != nil {
+			t.Fatalf("RunInteractive returned error: %v", err)
+		}
+
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("LoadTenders returned error: %v", err)
+		}
+		if len(tenders) != 0 {
+			t.Fatalf("expected no tenders after quitting continue screen, got %d", len(tenders))
+		}
+	})
 }
 
 func TestDrawHome(t *testing.T) {

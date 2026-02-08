@@ -2,6 +2,7 @@ package tender
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,6 +42,8 @@ const (
 	panelWidth = 86
 )
 
+var errQuitRequested = errors.New("quit requested")
+
 func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 	r := bufio.NewReader(stdin)
 	tty := ttyFile(stdin)
@@ -58,6 +61,9 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 
 		action, err := promptMenuChoice(r, stdout, tty, "")
 		if err != nil {
+			if errors.Is(err, errQuitRequested) {
+				return nil
+			}
 			return err
 		}
 
@@ -66,6 +72,9 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 			base := Tender{Agent: "Build", Manual: true, Push: false}
 			t, ok, err := inputTender(r, stdout, root, base, true, tty)
 			if err != nil {
+				if errors.Is(err, errQuitRequested) {
+					return nil
+				}
 				return err
 			}
 			if !ok {
@@ -75,7 +84,12 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 			saved, err := SaveNewTender(root, t)
 			if err != nil {
 				printErr(stdout, err.Error())
-				acknowledge(r, stdout, tty)
+				if err := acknowledge(r, stdout, tty); err != nil {
+					if errors.Is(err, errQuitRequested) {
+						return nil
+					}
+					return err
+				}
 				continue
 			}
 			printOK(stdout, "Saved "+saved.WorkflowFile)
@@ -97,6 +111,9 @@ func RunInteractive(root string, stdin io.Reader, stdout io.Writer) error {
 				selectedIndex := offset + slot
 				if selectedIndex >= 0 && selectedIndex < len(tenders) {
 					if err := runTenderMenu(r, stdout, root, tty, tenders[selectedIndex].Name); err != nil {
+						if errors.Is(err, errQuitRequested) {
+							return nil
+						}
 						return err
 					}
 					continue
@@ -175,13 +192,18 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 	}
 	nameInput, err := prompt(r, w, namePrompt)
 	if err != nil {
+		if errors.Is(err, errQuitRequested) {
+			return Tender{}, false, err
+		}
 		return Tender{}, false, err
 	}
 	nameInput = strings.TrimSpace(nameInput)
 	if nameInput == "" {
 		if strings.TrimSpace(base.Name) == "" {
 			printErr(w, "Name is required.")
-			acknowledge(r, w, tty)
+			if err := acknowledge(r, w, tty); err != nil {
+				return Tender{}, false, err
+			}
 			return base, false, nil
 		}
 		nameInput = base.Name
@@ -242,7 +264,9 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			built, err := buildHourlyCron(strconv.Itoa(minutes[minuteIndex]))
 			if err != nil {
 				printErr(w, err.Error())
-				acknowledge(r, w, tty)
+				if err := acknowledge(r, w, tty); err != nil {
+					return Tender{}, false, err
+				}
 				return base, false, nil
 			}
 			cron = built
@@ -260,7 +284,9 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			built, err := buildDailyCron(formatTime(preset.Hour, preset.Minute))
 			if err != nil {
 				printErr(w, err.Error())
-				acknowledge(r, w, tty)
+				if err := acknowledge(r, w, tty); err != nil {
+					return Tender{}, false, err
+				}
 				return base, false, nil
 			}
 			cron = built
@@ -289,7 +315,9 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 			built, err := buildWeeklyCron(joinInts(days, ","), formatTime(preset.Hour, preset.Minute))
 			if err != nil {
 				printErr(w, err.Error())
-				acknowledge(r, w, tty)
+				if err := acknowledge(r, w, tty); err != nil {
+					return Tender{}, false, err
+				}
 				return base, false, nil
 			}
 			cron = built
@@ -312,7 +340,9 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 
 	if err := ValidateTender(result); err != nil {
 		printErr(w, err.Error())
-		acknowledge(r, w, tty)
+		if err := acknowledge(r, w, tty); err != nil {
+			return Tender{}, false, err
+		}
 		return base, false, nil
 	}
 	return result, true, nil
@@ -445,15 +475,20 @@ func prompt(r *bufio.Reader, w io.Writer, label string) (string, error) {
 	if err != nil && err != io.EOF {
 		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	choice := strings.TrimSpace(line)
+	if isQuitChoice(choice) {
+		return "", errQuitRequested
+	}
+	return choice, nil
 }
 
 func clearScreen(w io.Writer) {
 	fmt.Fprint(w, "\033[H\033[2J")
 }
 
-func acknowledge(r *bufio.Reader, w io.Writer, tty *os.File) {
-	_, _ = selectNumberedOption(r, w, tty, "Continue", []string{"Back to dashboard"}, 0, false)
+func acknowledge(r *bufio.Reader, w io.Writer, tty *os.File) error {
+	_, err := selectNumberedOption(r, w, tty, "Continue", []string{"Back to dashboard"}, 0, false)
+	return err
 }
 
 func printErr(w io.Writer, msg string) {
@@ -489,7 +524,9 @@ func chooseAgent(r *bufio.Reader, w io.Writer, root string, current string, tty 
 func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, action string) (Tender, bool, error) {
 	if len(tenders) == 0 {
 		printErr(w, "No tenders available")
-		acknowledge(r, w, tty)
+		if err := acknowledge(r, w, tty); err != nil {
+			return Tender{}, false, err
+		}
 		return Tender{}, false, nil
 	}
 
@@ -518,7 +555,9 @@ func selectTender(r *bufio.Reader, w io.Writer, tty *os.File, tenders []Tender, 
 		choice = strings.TrimSpace(choice)
 		if choice == "" {
 			printErr(w, "Action cancelled")
-			acknowledge(r, w, tty)
+			if err := acknowledge(r, w, tty); err != nil {
+				return Tender{}, false, err
+			}
 			return Tender{}, false, nil
 		}
 
@@ -575,7 +614,9 @@ func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name
 			}
 			if err := UpdateTender(root, selected.Name, updated); err != nil {
 				printErr(sw, err.Error())
-				acknowledge(r, sw, tty)
+				if err := acknowledge(r, sw, tty); err != nil {
+					return err
+				}
 				continue
 			}
 			current = updated.Name
@@ -719,8 +760,16 @@ func promptMenuChoice(r *bufio.Reader, w io.Writer, tty *os.File, label string) 
 		return "", nil
 	}
 	choice := strings.TrimSpace(string(ch))
+	if isQuitChoice(choice) {
+		fmt.Fprintln(w, choice)
+		return "", errQuitRequested
+	}
 	fmt.Fprintln(w, choice)
 	return choice, nil
+}
+
+func isQuitChoice(choice string) bool {
+	return strings.EqualFold(strings.TrimSpace(choice), "q")
 }
 
 func ttyFile(stdin io.Reader) *os.File {
