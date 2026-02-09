@@ -1,6 +1,6 @@
 {
   "name": "@susu-eng/tender",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Interactive tender CLI launcher",
   "private": false,
   "type": "module",
