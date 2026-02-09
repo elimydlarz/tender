@@ -35,9 +35,9 @@ function printHelp() {
   process.stdout.write("tender\n\n");
   process.stdout.write("Launcher for the tender CLI.\n\n");
   process.stdout.write("Usage:\n");
-  process.stdout.write("  pnpm dlx @susu-eng/cli@latest\n");
-  process.stdout.write("  npx @susu-eng/cli@latest <command>\n");
-  process.stdout.write("  npx @susu-eng/cli@latest <command> --help\n\n");
+  process.stdout.write("  pnpm dlx @susu-eng/tender@latest\n");
+  process.stdout.write("  npx @susu-eng/tender@latest <command>\n");
+  process.stdout.write("  npx @susu-eng/tender@latest <command> --help\n\n");
   process.stdout.write("Commands:\n");
   process.stdout.write("  init            Ensure .github/workflows exists\n");
   process.stdout.write("  add             Add a tender non-interactively (agent-friendly)\n");
@@ -47,8 +47,8 @@ function printHelp() {
   process.stdout.write("  rm              Remove a tender workflow\n");
   process.stdout.write("  help [command]  Show command help\n\n");
   process.stdout.write("Examples:\n");
-  process.stdout.write("  npx @susu-eng/cli@latest add --name nightly --agent Build --cron \"0 9 * * 1\"\n");
-  process.stdout.write("  npx @susu-eng/cli@latest help add\n");
+  process.stdout.write("  npx @susu-eng/tender@latest add --name nightly --agent Build --cron \"0 9 * * 1\"\n");
+  process.stdout.write("  npx @susu-eng/tender@latest help add\n");
 }
 
 async function resolveBinaryPath() {
@@ -95,7 +95,7 @@ async function ensureDownloadedBinary() {
   const mappedArch = mapArch(process.arch);
   if (!mappedPlatform || !mappedArch) {
     throw new Error(
-      `Unsupported platform for @susu-eng/cli: platform=${process.platform} arch=${process.arch}`
+      `Unsupported platform for @susu-eng/tender: platform=${process.platform} arch=${process.arch}`
     );
   }
 
@@ -179,7 +179,7 @@ function mapArch(arch) {
 async function downloadToPath(url, destinationPath) {
   const response = await fetch(url, {
     headers: {
-      "user-agent": "@susu-eng/cli",
+      "user-agent": "@susu-eng/tender",
       accept: "application/octet-stream",
     },
     redirect: "follow",

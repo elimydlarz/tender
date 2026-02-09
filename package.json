@@ -1,5 +1,5 @@
 {
-  "name": "@susu-eng/cli",
+  "name": "@susu-eng/tender",
   "version": "0.5.0",
   "description": "Interactive tender CLI launcher",
   "private": false,
