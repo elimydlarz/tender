@@ -18,6 +18,7 @@ fi
 
 TAG="v$VERSION"
 DRY_RUN="${DRY_RUN:-0}"
+PACKAGE_NAME="$(node -pe "require('./package.json').name")"
 
 if [[ "$DRY_RUN" != "1" && -z "${NPM_TOKEN:-}" ]]; then
   echo "error: NPM_TOKEN must be set for npm publish"
@@ -32,6 +33,39 @@ fi
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
   echo "error: git tag $TAG already exists"
   exit 1
+fi
+
+NPMRC=""
+cleanup() {
+  [[ -n "$NPMRC" ]] && rm -f "$NPMRC"
+}
+trap cleanup EXIT
+
+if [[ "$DRY_RUN" != "1" ]]; then
+  NPMRC="$(mktemp)"
+  cat >"$NPMRC" <<EOF
+registry=https://registry.npmjs.org/
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+EOF
+
+  echo "==> Verifying npm token"
+  if ! NPM_USER="$(NPM_CONFIG_USERCONFIG="$NPMRC" npm whoami 2>/dev/null)"; then
+    echo "error: npm auth failed for NPM_TOKEN (token expired/revoked or missing publish permission)"
+    echo "hint: create a fresh npm token and ensure it can publish packages"
+    exit 2
+  fi
+
+  if ! NPM_CONFIG_USERCONFIG="$NPMRC" npm view "$PACKAGE_NAME" version >/dev/null 2>&1; then
+    if [[ "$PACKAGE_NAME" == @*/* ]]; then
+      SCOPE="${PACKAGE_NAME#@}"
+      SCOPE="${SCOPE%%/*}"
+      if [[ "$SCOPE" != "$NPM_USER" ]] && ! NPM_CONFIG_USERCONFIG="$NPMRC" npm org ls "$SCOPE" "$NPM_USER" >/dev/null 2>&1; then
+        echo "error: package $PACKAGE_NAME is not published yet, and npm user '$NPM_USER' is not a member of org '$SCOPE'"
+        echo "hint: add '$NPM_USER' to npm org '$SCOPE' with publish rights, or publish under your own scope"
+        exit 2
+      fi
+    fi
+  fi
 fi
 
 echo "==> Running release checks"
@@ -56,21 +90,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-echo "==> Publishing npm package @tender/cli"
-NPMRC="$(mktemp)"
-cleanup() {
-  rm -f "$NPMRC"
-}
-trap cleanup EXIT
-cat >"$NPMRC" <<EOF
-registry=https://registry.npmjs.org/
-always-auth=true
-//registry.npmjs.org/:_authToken=${NPM_TOKEN}
-EOF
+echo "==> Publishing npm package $PACKAGE_NAME"
 NPM_CONFIG_USERCONFIG="$NPMRC" npm publish --access public
 
 cat <<EOF
 Release complete.
-- Published npm package @tender/cli@$VERSION
+- Published npm package $PACKAGE_NAME@$VERSION
 - Created local commit and tag $TAG
 EOF

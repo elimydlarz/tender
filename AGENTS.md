@@ -63,6 +63,6 @@ Generated workflows must keep these properties:
 - Use shared concurrency group `tender-main`.
 
 ## Distribution contract
-- Public install path is package-based (`pnpm dlx @tender/cli@latest` or `pnpm exec tender` when installed).
+- Public install path is package-based (`pnpm dlx @susu-eng/cli@latest` or `pnpm exec tender` when installed).
 - Keep CLI interactive-first by default.
 - Local launcher verification path is `make npx-smoke`, `make npx-pack-smoke`, and `make npx-local`.

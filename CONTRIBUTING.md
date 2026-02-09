@@ -72,6 +72,8 @@ make release-dry-run VERSION=0.2.0
 
 Local publish requirements:
 - `NPM_TOKEN` environment variable must be set in your shell.
+- Token must be valid for npm publish (not expired/revoked).
+- For first publish of scoped packages (for example `@susu-eng/cli`), the npm user behind the token must have publish rights in that scope/org.
 
 ## Workflow Contract
 
