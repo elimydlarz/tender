@@ -42,6 +42,17 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "$DRY_RUN" != "1" ]]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "error: GitHub CLI (gh) is required to publish release assets"
+    echo "hint: install gh and run 'gh auth login'"
+    exit 2
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "error: gh is not authenticated"
+    echo "hint: run 'gh auth login' and retry"
+    exit 2
+  fi
+
   NPMRC="$(mktemp)"
   cat >"$NPMRC" <<EOF
 registry=https://registry.npmjs.org/
