@@ -118,9 +118,9 @@ What it does:
 - Runs `check-fast` and npm pack smoke checks.
 - Bumps `package.json` version.
 - Commits `release: vX.Y.Z`.
-- Tags `vX.Y.Z` and pushes commit + tag.
-- Triggers GitHub Actions `release` workflow to build binaries and publish
-  `@susu-eng/tender`.
+- Tags `vX.Y.Z` locally.
+- Builds cross-platform binaries and uploads them to GitHub release `vX.Y.Z`.
+- Publishes `@susu-eng/tender` to npm.
 
 Repository secret required for npm publishing:
 

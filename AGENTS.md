@@ -38,8 +38,9 @@ These instructions apply to the entire repository.
   - `make acceptance`: run acceptance tests (`act` + `git`)
   - `make check-fast`: run `fmt-check + lint + test + build`
   - `make check`: run full verification (`check-fast + acceptance`)
-  - `make publish VERSION=x.y.z`: run checks, bump package version, publish to npm locally, and keep commit/tag local
+  - `make publish VERSION=x.y.z`: run checks, bump package version, upload release binaries, and publish to npm
   - `make release-dry-run VERSION=x.y.z`: same release flow without npm publish
+  - `make release-assets VERSION=x.y.z`: build and upload GitHub release binaries for a version
 - Agent completion gate for code changes:
   - Run `make npx-smoke` and `make check-fast` before marking the task complete.
   - If launcher packaging behavior changed, also run `make npx-pack-smoke`.

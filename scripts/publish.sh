@@ -90,11 +90,15 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
+echo "==> Building and uploading GitHub release binaries"
+./scripts/release-assets.sh "$VERSION"
+
 echo "==> Publishing npm package $PACKAGE_NAME"
 NPM_CONFIG_USERCONFIG="$NPMRC" npm publish --access public
 
 cat <<EOF
 Release complete.
+- Uploaded release binaries for $TAG
 - Published npm package $PACKAGE_NAME@$VERSION
 - Created local commit and tag $TAG
 EOF

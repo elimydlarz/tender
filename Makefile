@@ -6,7 +6,7 @@ BIN_DIR := $(ROOT)/bin
 BIN := $(BIN_DIR)/tender
 NPM_CACHE_DIR := $(ROOT)/.tender/npm-cache
 
-.PHONY: help build run npx-local npx-smoke npx-pack-smoke fmt fmt-check lint test acceptance check-fast check publish release-dry-run
+.PHONY: help build run npx-local npx-smoke npx-pack-smoke fmt fmt-check lint test acceptance check-fast check publish release-dry-run release-assets
 
 help:
 	@echo "tender project commands"
@@ -25,6 +25,7 @@ help:
 	@echo "  make check        Run full verification (check-fast + acceptance)"
 	@echo "  make publish VERSION=x.y.z  Publish npm package from local machine"
 	@echo "  make release-dry-run VERSION=x.y.z  Validate local publish flow without publish"
+	@echo "  make release-assets VERSION=x.y.z  Build/upload GitHub release binaries"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -88,3 +89,6 @@ publish:
 
 release-dry-run:
 	@DRY_RUN=1 ./scripts/publish.sh "$(VERSION)"
+
+release-assets:
+	@./scripts/release-assets.sh "$(VERSION)"
