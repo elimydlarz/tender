@@ -515,6 +515,7 @@ func TestRenderWorkflow(t *testing.T) {
 			`workflow_dispatch:`,
 			`inputs:`,
 			`prompt:`,
+			`timeout-minutes: 30`,
 			`TENDER_NAME: "test-workflow"`,
 			`TENDER_AGENT: "Build"`,
 			`TENDER_PROMPT: "test prompt"`,
@@ -588,6 +589,39 @@ func TestRenderWorkflow(t *testing.T) {
 		}
 	})
 
+	t.Run("renders push-only workflow", func(t *testing.T) {
+		tender := Tender{
+			Name:   "push-only-workflow",
+			Agent:  "Build",
+			Prompt: "push prompt",
+			Manual: false,
+			Push:   true,
+		}
+
+		result := RenderWorkflow(tender)
+		requiredSnippets := []string{
+			`name: "tender/push-only-workflow"`,
+			`push:`,
+			`branches:`,
+			`- main`,
+			`if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}`,
+		}
+		for _, snippet := range requiredSnippets {
+			if !strings.Contains(result, snippet) {
+				t.Fatalf("workflow missing snippet %q:\n%s", snippet, result)
+			}
+		}
+		if strings.Contains(result, "workflow_dispatch:") {
+			t.Fatal("push-only workflow should not contain workflow_dispatch")
+		}
+		if strings.Contains(result, "schedule:") {
+			t.Fatal("push-only workflow should not contain schedule")
+		}
+		if strings.Contains(result, "inputs:") {
+			t.Fatal("push-only workflow should not contain manual inputs")
+		}
+	})
+
 	t.Run("adds workflow_dispatch when neither manual nor schedule", func(t *testing.T) {
 		tender := Tender{
 			Name:   "minimal-workflow",
@@ -625,6 +659,7 @@ on:
 jobs:
   tender:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       TENDER_NAME: "test-workflow"
       TENDER_AGENT: "Build"
@@ -650,6 +685,9 @@ jobs:
 			}
 			if !tender.Manual {
 				t.Fatal("expected manual to be true")
+			}
+			if tender.TimeoutMinutes != 45 {
+				t.Fatalf("unexpected timeout-minutes: %d", tender.TimeoutMinutes)
 			}
 		})
 
@@ -686,6 +724,9 @@ jobs:
 			}
 			if tender.Manual {
 				t.Fatal("expected manual to be false")
+			}
+			if tender.TimeoutMinutes != DefaultTimeoutMinutes {
+				t.Fatalf("expected default timeout-minutes %d, got %d", DefaultTimeoutMinutes, tender.TimeoutMinutes)
 			}
 		})
 
@@ -729,6 +770,46 @@ jobs:
 			}
 		})
 
+		t.Run("parses push-only workflow", func(t *testing.T) {
+			content := `name: "tender/push-only-workflow"
+on:
+  push:
+    branches:
+      - main
+jobs:
+  tender:
+    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    env:
+      TENDER_NAME: "push-only-workflow"
+      TENDER_AGENT: "Build"
+      TENDER_PROMPT: "push prompt"
+    steps:
+      - name: Run OpenCode
+        run: opencode run --agent "$TENDER_AGENT" "$RUN_PROMPT"
+`
+
+			tender, ok := parseTenderWorkflow(content)
+			if !ok {
+				t.Fatal("failed to parse push-only workflow")
+			}
+			if tender.Name != "push-only-workflow" {
+				t.Fatalf("unexpected name: %q", tender.Name)
+			}
+			if tender.Agent != "Build" {
+				t.Fatalf("unexpected agent: %q", tender.Agent)
+			}
+			if tender.Manual {
+				t.Fatal("expected manual to be false")
+			}
+			if !tender.Push {
+				t.Fatal("expected push to be true")
+			}
+			if tender.Cron != "" {
+				t.Fatalf("expected empty cron, got %q", tender.Cron)
+			}
+		})
+
 		t.Run("infers name from agent when name is empty", func(t *testing.T) {
 			content := `name: "tender/"
 on:
@@ -750,6 +831,9 @@ jobs:
 
 			if tender.Name != "Build" {
 				t.Fatalf("expected inferred name 'Build', got %q", tender.Name)
+			}
+			if tender.TimeoutMinutes != DefaultTimeoutMinutes {
+				t.Fatalf("expected default timeout-minutes %d, got %d", DefaultTimeoutMinutes, tender.TimeoutMinutes)
 			}
 		})
 	})
@@ -923,6 +1007,20 @@ func TestValidateTender(t *testing.T) {
 			err := ValidateTender(tender)
 			if err != nil {
 				t.Fatalf("valid hybrid tender rejected: %v", err)
+			}
+		})
+
+		t.Run("accepts push-only tender", func(t *testing.T) {
+			tender := Tender{
+				Name:   "push-only",
+				Agent:  "Build",
+				Manual: false,
+				Push:   true,
+			}
+
+			err := ValidateTender(tender)
+			if err != nil {
+				t.Fatalf("valid push-only tender rejected: %v", err)
 			}
 		})
 
@@ -1153,6 +1251,23 @@ func TestValidateTender(t *testing.T) {
 			err := ValidateTender(tender)
 			if err != nil {
 				t.Fatalf("unexpected validation error for valid range: %v", err)
+			}
+		})
+
+		t.Run("rejects negative timeout-minutes", func(t *testing.T) {
+			tender := Tender{
+				Name:           "test",
+				Agent:          "Build",
+				Manual:         true,
+				TimeoutMinutes: -1,
+			}
+
+			err := ValidateTender(tender)
+			if err == nil {
+				t.Fatal("expected validation error for negative timeout")
+			}
+			if !strings.Contains(err.Error(), "timeout-minutes must be greater than 0") {
+				t.Fatalf("unexpected error message: %v", err)
 			}
 		})
 	})

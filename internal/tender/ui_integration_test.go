@@ -83,6 +83,7 @@ EOF
 			"q", // name
 			"",  // agent (default TendTests)
 			"",  // push (default no)
+			"",  // timeout (default 30)
 			"2", // recurring schedule: no
 			"q", // exit dashboard
 		}, "\n") + "\n")
@@ -164,6 +165,7 @@ EOF
 			"new-tender", // name
 			"",           // agent (default: TendTests)
 			"",           // push (default: no)
+			"",           // timeout (default: 30)
 			"",           // recurring schedule (default: yes)
 			"",           // schedule mode (default: daily)
 			"",           // daily time (default: 09:00 UTC)
@@ -176,6 +178,9 @@ EOF
 		}
 
 		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if !strings.Contains(clean, "Timeout in minutes (default: 30):") {
+			t.Fatalf("expected timeout prompt with create default:\n%s", clean)
+		}
 		assertQuestionDefaultChoice(t, clean, "Enable recurring schedule?", 1)
 		if !strings.Contains(clean, "Yes (default)") {
 			t.Fatalf("expected schedule prompt to mark Yes as default:\n%s", clean)
@@ -202,6 +207,7 @@ EOF
 			"new-tender", // name
 			"",           // agent (default TendTests)
 			"2",          // push: no
+			"",           // timeout (default: 30)
 			"2",          // recurring schedule: no
 			"q",          // exit
 		}, "\n") + "\n")
@@ -233,9 +239,10 @@ EOF
 			t.Fatalf("failed to create workflow dir: %v", err)
 		}
 		if _, err := SaveNewTender(root, Tender{
-			Name:   "existing",
-			Agent:  "Build",
-			Manual: true,
+			Name:           "existing",
+			Agent:          "Build",
+			Manual:         true,
+			TimeoutMinutes: 45,
 		}); err != nil {
 			t.Fatalf("failed to seed test tender: %v", err)
 		}
@@ -255,6 +262,7 @@ EOF
 			"",  // name (default existing)
 			"",  // agent (default TendTests)
 			"",  // push (default no)
+			"",  // timeout (default existing)
 			"",  // recurring schedule (default no)
 			"1", // back
 			"q", // exit
@@ -266,6 +274,9 @@ EOF
 		}
 
 		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		if !strings.Contains(clean, "Timeout in minutes (default: 45):") {
+			t.Fatalf("expected timeout prompt with edit default:\n%s", clean)
+		}
 		assertQuestionDefaultChoice(t, clean, "Enable recurring schedule?", 2)
 		if !strings.Contains(clean, "No (default)") {
 			t.Fatalf("expected schedule prompt to mark No as default:\n%s", clean)
@@ -302,6 +313,7 @@ EOF
 			"0",            // agent page down
 			"2",            // choose Agent10 (2nd slot on page 2)
 			"",             // push (default no)
+			"",             // timeout (default 30)
 			"2",            // recurring schedule: no
 			"q",            // exit
 		}, "\n") + "\n")
@@ -331,6 +343,79 @@ EOF
 		}
 		if strings.Contains(clean, "Choose 1-10") {
 			t.Fatalf("did not expect multi-digit selection prompt:\n%s", clean)
+		}
+	})
+
+	t.Run("complete journey handles blank name then exercises create back edit delete and exit", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		binDir := t.TempDir()
+		writeFakeOpenCode(t, binDir, `#!/bin/sh
+cat <<'EOF'
+NAME MODE
+TendTests primary
+RefineDocs primary
+EOF
+`)
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		stdin := strings.NewReader(strings.Join([]string{
+			"1",               // create
+			"",                // name (blank; should fail validation)
+			"1",               // continue/back to dashboard
+			"1",               // create
+			"journey",         // name
+			"",                // agent (default TendTests)
+			"1",               // push: yes
+			"45",              // timeout
+			"1",               // recurring schedule: yes
+			"2",               // schedule mode: daily
+			"4",               // daily time: 12:00 UTC
+			"2",               // open tender
+			"1",               // back
+			"2",               // open tender again
+			"2",               // edit
+			"journey-renamed", // name
+			"2",               // agent: RefineDocs
+			"2",               // push: no
+			"60",              // timeout
+			"2",               // recurring schedule: no
+			"3",               // delete
+			"1",               // confirm delete: yes
+			"q",               // exit
+		}, "\n") + "\n")
+		var stdout bytes.Buffer
+
+		if err := RunInteractive(root, stdin, &stdout); err != nil {
+			t.Fatalf("RunInteractive() error = %v", err)
+		}
+
+		tenders, err := LoadTenders(root)
+		if err != nil {
+			t.Fatalf("LoadTenders(%q) error = %v", root, err)
+		}
+		if len(tenders) != 0 {
+			t.Fatalf("len(LoadTenders(%q)) = %d, want 0", root, len(tenders))
+		}
+
+		clean := ansiRE.ReplaceAllString(stdout.String(), "")
+		requiredSnippets := []string{
+			"ERROR: Name is required.",
+			"OK: Saved journey.yml",
+			"OK: Updated journey.yml",
+			"OK: Deleted journey.yml",
+			"Tender journey",
+			"Tender journey-renamed",
+			"daily at 12:00 UTC + on-push(main) + on-demand",
+			"RefineDocs",
+		}
+		for _, snippet := range requiredSnippets {
+			if !strings.Contains(clean, snippet) {
+				t.Fatalf("RunInteractive() output missing %q\noutput:\n%s", snippet, clean)
+			}
 		}
 	})
 }

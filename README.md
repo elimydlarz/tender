@@ -75,9 +75,9 @@ pnpm dlx @tender/cli@latest <command>
 
 - `tender` launches the interactive TUI.
 - `tender init` ensures `.github/workflows` exists.
-- `tender add [--name <name>] --agent <agent> [--prompt "..."] [--cron "..."] [--manual true|false] [--push true|false] [<name>]`
+- `tender add [--name <name>] --agent <agent> [--prompt "..."] [--cron "..."] [--manual true|false] [--push true|false] [--timeout-minutes <minutes>] [<name>]`
   creates a tender non-interactively (for coding agents/automation).
-- `tender update <name> [--name <new-name>] [--agent <agent>] [--prompt "..."] [--cron "..."] [--clear-cron] [--manual true|false] [--push true|false]`
+- `tender update <name> [--name <new-name>] [--agent <agent>] [--prompt "..."] [--cron "..."] [--clear-cron] [--manual true|false] [--push true|false] [--timeout-minutes <minutes>]`
   updates an existing tender non-interactively.
 - `tender ls` lists managed tenders.
 - `tender run [--prompt "..."] <name>` triggers a tender immediately via
@@ -89,8 +89,8 @@ pnpm dlx @tender/cli@latest <command>
 Example non-interactive flow:
 
 ```bash
-pnpm dlx @tender/cli@latest add --name nightly --agent Build --cron "0 9 * * 1"
-pnpm dlx @tender/cli@latest update nightly --agent TendTests --push true --manual false --clear-cron
+pnpm dlx @tender/cli@latest add --name nightly --agent Build --cron "0 9 * * 1" --timeout-minutes 30
+pnpm dlx @tender/cli@latest update nightly --agent TendTests --push true --manual false --clear-cron --timeout-minutes 45
 ```
 
 ## How It Works

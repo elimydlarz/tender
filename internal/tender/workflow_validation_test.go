@@ -41,6 +41,7 @@ func TestWorkflowContentValidation(t *testing.T) {
 			"TENDER_NAME: \"test-workflow\"",
 			"TENDER_AGENT: \"Build\"",
 			"TENDER_PROMPT: \"test prompt\"",
+			"timeout-minutes: 30",
 			"opencode run",
 			"group: tender-main",
 		}
@@ -176,6 +177,9 @@ func TestWorkflowContentValidation(t *testing.T) {
 		if reloaded.Manual != original.Manual {
 			t.Fatalf("manual flag not preserved: expected %v, got %v", original.Manual, reloaded.Manual)
 		}
+		if reloaded.TimeoutMinutes != DefaultTimeoutMinutes {
+			t.Fatalf("timeout-minutes not preserved: expected %d, got %d", DefaultTimeoutMinutes, reloaded.TimeoutMinutes)
+		}
 	})
 
 	t.Run("validates workflow permissions and security", func(t *testing.T) {
@@ -203,6 +207,9 @@ func TestWorkflowContentValidation(t *testing.T) {
 		}
 		if !strings.Contains(workflow, "fetch-depth: 0") {
 			t.Fatal("workflow should fetch full history")
+		}
+		if !strings.Contains(workflow, "timeout-minutes: 30") {
+			t.Fatal("workflow should set default timeout-minutes")
 		}
 	})
 

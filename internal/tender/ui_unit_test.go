@@ -910,6 +910,67 @@ func TestPromptBinaryChoice(t *testing.T) {
 	})
 }
 
+func TestPromptTimeoutMinutes(t *testing.T) {
+	t.Run("uses provided default on blank input", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("\n"))
+		var out bytes.Buffer
+
+		got, err := promptTimeoutMinutes(reader, &out, 45)
+		if err != nil {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 45) error: %v", err)
+		}
+		if got != 45 {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 45) = %d, want 45", got)
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if !strings.Contains(clean, "Timeout in minutes (default: 45):") {
+			t.Fatalf("missing timeout prompt default in output:\n%s", clean)
+		}
+	})
+
+	t.Run("accepts explicit positive timeout", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("90\n"))
+		var out bytes.Buffer
+
+		got, err := promptTimeoutMinutes(reader, &out, 30)
+		if err != nil {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 30) error: %v", err)
+		}
+		if got != 90 {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 30) = %d, want 90", got)
+		}
+	})
+
+	t.Run("re-prompts on invalid timeout", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("0\nabc\n15\n"))
+		var out bytes.Buffer
+
+		got, err := promptTimeoutMinutes(reader, &out, 30)
+		if err != nil {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 30) error: %v", err)
+		}
+		if got != 15 {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 30) = %d, want 15", got)
+		}
+
+		clean := ansiRE.ReplaceAllString(out.String(), "")
+		if strings.Count(clean, "Timeout must be a positive whole number of minutes.") != 2 {
+			t.Fatalf("expected two timeout validation errors, got output:\n%s", clean)
+		}
+	})
+
+	t.Run("q requests quit", func(t *testing.T) {
+		reader := bufio.NewReader(strings.NewReader("q\n"))
+		var out bytes.Buffer
+
+		_, err := promptTimeoutMinutes(reader, &out, 30)
+		if !errors.Is(err, errQuitRequested) {
+			t.Fatalf("promptTimeoutMinutes(reader, out, 30) error = %v, want quit", err)
+		}
+	})
+}
+
 func TestSelectNumberedOption(t *testing.T) {
 	t.Run("renders only provided rows for short menus", func(t *testing.T) {
 		reader := bufio.NewReader(strings.NewReader("1\n"))

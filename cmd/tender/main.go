@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	addUsageLine    = "usage: tender add [--name <name>] --agent <agent> [--prompt \"...\"] [--cron \"...\"] [--manual true|false] [--push true|false] [<name>]"
-	updateUsageLine = "usage: tender update <name> [--name <new-name>] [--agent <agent>] [--prompt \"...\"] [--cron \"...\"] [--clear-cron] [--manual true|false] [--push true|false]"
+	addUsageLine    = "usage: tender add [--name <name>] --agent <agent> [--prompt \"...\"] [--cron \"...\"] [--manual true|false] [--push true|false] [--timeout-minutes <minutes>] [<name>]"
+	updateUsageLine = "usage: tender update <name> [--name <new-name>] [--agent <agent>] [--prompt \"...\"] [--cron \"...\"] [--clear-cron] [--manual true|false] [--push true|false] [--timeout-minutes <minutes>]"
 	runUsageLine    = "usage: tender run [--prompt \"...\"] <name>"
 	rmUsageLine     = "usage: tender rm [--yes] <name>"
 )
@@ -44,18 +44,22 @@ func main() {
 	case "add":
 		rawArgs := os.Args[2:]
 		if hasHelpFlag(rawArgs, map[string]struct{}{
-			"-agent":   {},
-			"--agent":  {},
-			"-name":    {},
-			"--name":   {},
-			"-prompt":  {},
-			"--prompt": {},
-			"-cron":    {},
-			"--cron":   {},
-			"-manual":  {},
-			"--manual": {},
-			"-push":    {},
-			"--push":   {},
+			"-agent":            {},
+			"--agent":           {},
+			"-name":             {},
+			"--name":            {},
+			"-prompt":           {},
+			"--prompt":          {},
+			"-cron":             {},
+			"--cron":            {},
+			"-manual":           {},
+			"--manual":          {},
+			"-push":             {},
+			"--push":            {},
+			"-timeout-minutes":  {},
+			"--timeout-minutes": {},
+			"-timeout":          {},
+			"--timeout":         {},
 		}) {
 			usage()
 			fmt.Println()
@@ -69,6 +73,9 @@ func main() {
 		cron := fs.String("cron", "", "optional cron schedule (5 fields, UTC)")
 		manual := fs.String("manual", "", "set workflow_dispatch trigger (true/false)")
 		push := fs.String("push", "", "set push-to-main trigger (true/false)")
+		timeoutMinutes := tender.DefaultTimeoutMinutes
+		fs.IntVar(&timeoutMinutes, "timeout-minutes", tender.DefaultTimeoutMinutes, "job timeout in minutes")
+		fs.IntVar(&timeoutMinutes, "timeout", tender.DefaultTimeoutMinutes, "alias for --timeout-minutes")
 		positionalName := ""
 		if len(rawArgs) > 0 && !strings.HasPrefix(rawArgs[0], "-") {
 			positionalName = strings.TrimSpace(rawArgs[0])
@@ -115,18 +122,23 @@ func main() {
 			}
 			pushValue = b
 		}
+		timeoutValue, err := parseTimeoutMinutesFlag(timeoutMinutes)
+		if err != nil {
+			fail(err)
+		}
 
 		agentName := strings.TrimSpace(*agent)
 		if err := requireCustomAgent(root, agentName); err != nil {
 			fail(err)
 		}
 		saved, err := tender.SaveNewTender(root, tender.Tender{
-			Name:   finalName,
-			Agent:  agentName,
-			Prompt: strings.TrimSpace(*prompt),
-			Cron:   strings.TrimSpace(*cron),
-			Manual: manualValue,
-			Push:   pushValue,
+			Name:           finalName,
+			Agent:          agentName,
+			Prompt:         strings.TrimSpace(*prompt),
+			Cron:           strings.TrimSpace(*cron),
+			Manual:         manualValue,
+			Push:           pushValue,
+			TimeoutMinutes: timeoutValue,
 		})
 		if err != nil {
 			fail(err)
@@ -136,20 +148,24 @@ func main() {
 	case "update":
 		rawArgs := os.Args[2:]
 		if hasHelpFlag(rawArgs, map[string]struct{}{
-			"-name":        {},
-			"--name":       {},
-			"-agent":       {},
-			"--agent":      {},
-			"-prompt":      {},
-			"--prompt":     {},
-			"-cron":        {},
-			"--cron":       {},
-			"-manual":      {},
-			"--manual":     {},
-			"-push":        {},
-			"--push":       {},
-			"-clear-cron":  {},
-			"--clear-cron": {},
+			"-name":             {},
+			"--name":            {},
+			"-agent":            {},
+			"--agent":           {},
+			"-prompt":           {},
+			"--prompt":          {},
+			"-cron":             {},
+			"--cron":            {},
+			"-manual":           {},
+			"--manual":          {},
+			"-push":             {},
+			"--push":            {},
+			"-clear-cron":       {},
+			"--clear-cron":      {},
+			"-timeout-minutes":  {},
+			"--timeout-minutes": {},
+			"-timeout":          {},
+			"--timeout":         {},
 		}) {
 			usage()
 			fmt.Println()
@@ -164,6 +180,9 @@ func main() {
 		clearCron := fs.Bool("clear-cron", false, "remove schedule")
 		manual := fs.String("manual", "", "set workflow_dispatch trigger (true/false)")
 		push := fs.String("push", "", "set push-to-main trigger (true/false)")
+		timeoutMinutes := 0
+		fs.IntVar(&timeoutMinutes, "timeout-minutes", 0, "set job timeout in minutes")
+		fs.IntVar(&timeoutMinutes, "timeout", 0, "alias for --timeout-minutes")
 		targetName := ""
 		if len(rawArgs) > 0 && !strings.HasPrefix(rawArgs[0], "-") {
 			targetName = strings.TrimSpace(rawArgs[0])
@@ -232,6 +251,14 @@ func main() {
 				fail(err)
 			}
 			updated.Push = b
+			changed = true
+		}
+		if isFlagSet(fs, "timeout-minutes") || isFlagSet(fs, "timeout") {
+			parsedTimeout, err := parseTimeoutMinutesFlag(timeoutMinutes)
+			if err != nil {
+				fail(err)
+			}
+			updated.TimeoutMinutes = parsedTimeout
 			changed = true
 		}
 
@@ -382,6 +409,13 @@ func parseBoolFlag(raw string, name string) (bool, error) {
 	return b, nil
 }
 
+func parseTimeoutMinutesFlag(value int) (int, error) {
+	if value <= 0 {
+		return 0, fmt.Errorf("timeout-minutes must be greater than 0")
+	}
+	return value, nil
+}
+
 func findTenderByName(tenders []tender.Tender, name string) (tender.Tender, bool) {
 	needle := strings.TrimSpace(strings.ToLower(name))
 	for _, t := range tenders {
@@ -450,6 +484,7 @@ func printAddHelp() {
 	fmt.Println("Notes:")
 	fmt.Println("  - Provide the tender name either as positional <name> or --name.")
 	fmt.Println("  - --manual defaults to true, --push defaults to false.")
+	fmt.Println("  - --timeout-minutes defaults to 30.")
 }
 
 func printUpdateHelp() {
@@ -459,6 +494,7 @@ func printUpdateHelp() {
 	fmt.Println("Notes:")
 	fmt.Println("  - Target tender name is required as positional <name>.")
 	fmt.Println("  - Use --clear-cron to remove schedule.")
+	fmt.Println("  - Use --timeout-minutes to override the workflow job timeout.")
 }
 
 func printRunHelp() {

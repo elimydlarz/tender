@@ -18,7 +18,7 @@ func DispatchTenderNow(root string, tenderName string, prompt string, stdout io.
 	}
 	t := tenders[idx]
 	if !t.Manual {
-		return fmt.Errorf("tender %q is schedule-only; enable on-demand runs to use 'tender run'", tenderName)
+		return fmt.Errorf("tender %q does not allow on-demand runs; enable workflow_dispatch to use 'tender run'", tenderName)
 	}
 
 	if _, err := exec.LookPath("gh"); err != nil {

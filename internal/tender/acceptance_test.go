@@ -121,6 +121,51 @@ func TestAcceptanceManualOnlyExcludedFromScheduleEventInAct(t *testing.T) {
 	}
 }
 
+func TestAcceptancePushOnlyExcludedFromManualAndScheduleEventsInAct(t *testing.T) {
+	ensureBinary(t, "act")
+	ensureBinary(t, "git")
+
+	fixture := newFixtureRepo(t, "push-only")
+
+	_, err := SaveNewTender(fixture, Tender{
+		Name:   "mainline-bot",
+		Agent:  "refactor_bot",
+		Prompt: "Refine docs and tests",
+		Manual: false,
+		Push:   true,
+	})
+	if err != nil {
+		t.Fatalf("SaveNewTender: %v", err)
+	}
+
+	commitFixture(t, fixture)
+
+	manualOut := runCmd(t, fixture, "act", "-l", "workflow_dispatch", "-W", ".github/workflows")
+	if strings.Contains(manualOut, "tender/mainline-bot") {
+		t.Fatalf("push-only tender should not appear for workflow_dispatch:\n%s", manualOut)
+	}
+
+	scheduleOut := runCmd(t, fixture, "act", "-l", "schedule", "-W", ".github/workflows")
+	if strings.Contains(scheduleOut, "tender/mainline-bot") {
+		t.Fatalf("push-only tender should not appear for schedule event:\n%s", scheduleOut)
+	}
+
+	pushOut := runCmd(t, fixture, "act", "-l", "push", "-W", ".github/workflows")
+	if !strings.Contains(pushOut, "tender/mainline-bot") {
+		t.Fatalf("push-only tender missing for push event:\n%s", pushOut)
+	}
+
+	workflowPath := filepath.Join(fixture, WorkflowDir, "mainline-bot.yml")
+	workflowContent, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", workflowPath, err)
+	}
+	text := string(workflowContent)
+	if !strings.Contains(text, "if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}") {
+		t.Fatalf("push-only workflow missing bot-loop guard:\n%s", text)
+	}
+}
+
 func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 	ensureBinary(t, "git")
 	ensureBinary(t, "go")
@@ -144,6 +189,8 @@ func TestAcceptanceTTY_NumberThenEnter_DoesNotSkipName(t *testing.T) {
 		"expect \"Run on every push to main?\"",
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
+		"expect \"Timeout in minutes\"",
+		"send \"\\r\"",
 		"expect \"Enable recurring schedule?\"",
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
@@ -195,6 +242,8 @@ func TestAcceptanceTTY_AgentPagingUsesSingleKeyScroll(t *testing.T) {
 		"expect \"Run on every push to main?\"",
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
+		"expect \"Timeout in minutes\"",
+		"send \"\\r\"",
 		"expect \"Enable recurring schedule?\"",
 		"expect -re {Choose .*:}",
 		"send \"2\\r\"",
@@ -351,11 +400,12 @@ func buildTenderCLI(t *testing.T) string {
 func runInteractiveAdd(t *testing.T, fixture string, cli string, name string) {
 	t.Helper()
 	// Scripted input for interactive flow:
-	// action(add) -> name -> agent(default) -> push(default no) -> enable schedule -> weekly ->
-	// monday -> 09:00 -> continue -> quit.
+	// action(add) -> name -> agent(default) -> push(default no) -> timeout(default) ->
+	// enable schedule -> weekly -> monday -> 09:00 -> continue -> quit.
 	input := strings.Join([]string{
 		"1",
 		name,
+		"",
 		"",
 		"",
 		"1",

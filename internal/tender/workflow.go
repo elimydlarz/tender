@@ -130,6 +130,9 @@ func RenderWorkflow(t Tender) string {
 		b.WriteString("    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}\n")
 	}
 	b.WriteString("    runs-on: ubuntu-latest\n")
+	b.WriteString("    timeout-minutes: ")
+	b.WriteString(strconv.Itoa(normalizeTimeoutMinutes(t.TimeoutMinutes)))
+	b.WriteString("\n")
 	b.WriteString("    env:\n")
 	b.WriteString("      TENDER_NAME: ")
 	b.WriteString(strconv.Quote(strings.TrimSpace(t.Name)))
@@ -229,6 +232,12 @@ func parseTenderWorkflow(content string) (Tender, bool) {
 			hasAgent = strings.TrimSpace(t.Agent) != ""
 		case strings.HasPrefix(trim, "TENDER_PROMPT:"):
 			t.Prompt = parseQuotedValue(strings.TrimSpace(strings.TrimPrefix(trim, "TENDER_PROMPT:")))
+		case strings.HasPrefix(trim, "timeout-minutes:"):
+			timeoutRaw := strings.TrimSpace(strings.TrimPrefix(trim, "timeout-minutes:"))
+			timeout, err := strconv.Atoi(timeoutRaw)
+			if err == nil && timeout > 0 {
+				t.TimeoutMinutes = timeout
+			}
 		case strings.Contains(trim, "opencode run"):
 			hasRun = true
 		}
@@ -239,6 +248,7 @@ func parseTenderWorkflow(content string) (Tender, bool) {
 	if strings.TrimSpace(t.Name) == "" {
 		t.Name = strings.TrimSpace(t.Agent)
 	}
+	t.TimeoutMinutes = normalizeTimeoutMinutes(t.TimeoutMinutes)
 	return t, true
 }
 
@@ -272,6 +282,9 @@ func ValidateTender(t Tender) error {
 		if len(strings.Fields(t.Cron)) != 5 {
 			return fmt.Errorf("cron must have 5 fields")
 		}
+	}
+	if t.TimeoutMinutes < 0 {
+		return fmt.Errorf("timeout-minutes must be greater than 0")
 	}
 	if !t.Manual && !t.Push && strings.TrimSpace(t.Cron) == "" {
 		return fmt.Errorf("enable manual or set a schedule")

@@ -307,6 +307,7 @@ func TestCLIAgentCommands(t *testing.T) {
 			"--cron", "0 9 * * 1",
 			"--manual", "true",
 			"--push", "false",
+			"--timeout-minutes", "40",
 		)
 		addCmd.Dir = tmpDir
 		addCmd.Env = withPrependedPATH(fakeBin)
@@ -330,6 +331,15 @@ func TestCLIAgentCommands(t *testing.T) {
 		if !strings.Contains(listStdout.String(), "nightly\tTendTests\tweekly Mon at 09:00 UTC + on-demand\tnightly.yml") {
 			t.Fatalf("expected created tender in list output, got: %s", listStdout.String())
 		}
+		workflowPath := filepath.Join(tmpDir, ".github", "workflows", "nightly.yml")
+		workflowBytes, err := os.ReadFile(workflowPath)
+		if err != nil {
+			t.Fatalf("read created workflow: %v", err)
+		}
+		workflow := string(workflowBytes)
+		if !strings.Contains(workflow, "timeout-minutes: 40") {
+			t.Fatalf("expected add timeout-minutes in workflow, got:\n%s", workflow)
+		}
 
 		updateCmd := exec.Command(
 			binPath,
@@ -339,6 +349,7 @@ func TestCLIAgentCommands(t *testing.T) {
 			"--manual", "false",
 			"--push", "true",
 			"--clear-cron",
+			"--timeout-minutes", "55",
 		)
 		updateCmd.Dir = tmpDir
 		updateCmd.Env = withPrependedPATH(fakeBin)
@@ -352,14 +363,16 @@ func TestCLIAgentCommands(t *testing.T) {
 			t.Fatalf("expected updated output, got: %s", updateStdout.String())
 		}
 
-		workflowPath := filepath.Join(tmpDir, ".github", "workflows", "nightly.yml")
-		workflowBytes, err := os.ReadFile(workflowPath)
+		workflowBytes, err = os.ReadFile(workflowPath)
 		if err != nil {
 			t.Fatalf("read updated workflow: %v", err)
 		}
-		workflow := string(workflowBytes)
+		workflow = string(workflowBytes)
 		if !strings.Contains(workflow, `TENDER_AGENT: "TendTests"`) {
 			t.Fatalf("expected updated agent in workflow, got:\n%s", workflow)
+		}
+		if !strings.Contains(workflow, "timeout-minutes: 55") {
+			t.Fatalf("expected updated timeout-minutes in workflow, got:\n%s", workflow)
 		}
 		triggerBlock := workflow
 		if idx := strings.Index(triggerBlock, "\npermissions:\n"); idx >= 0 {

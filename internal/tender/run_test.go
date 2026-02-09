@@ -130,7 +130,36 @@ func TestDispatchTenderNow(t *testing.T) {
 			t.Fatal("expected error for schedule-only tender")
 		}
 
-		expected := "tender \"schedule-only\" is schedule-only; enable on-demand runs to use 'tender run'"
+		expected := "tender \"schedule-only\" does not allow on-demand runs; enable workflow_dispatch to use 'tender run'"
+		if err.Error() != expected {
+			t.Fatalf("expected error %q, got %q", expected, err.Error())
+		}
+	})
+
+	t.Run("returns error for push-only tender", func(t *testing.T) {
+		root := t.TempDir()
+		if err := EnsureWorkflowDir(root); err != nil {
+			t.Fatalf("failed to create workflow dir: %v", err)
+		}
+
+		tender := Tender{
+			Name:         "push-only",
+			Agent:        "Build",
+			Manual:       false,
+			Push:         true,
+			WorkflowFile: "push-only.yml",
+		}
+		if err := SaveTender(root, tender); err != nil {
+			t.Fatalf("failed to save tender: %v", err)
+		}
+
+		var stdout, stderr bytes.Buffer
+		err := DispatchTenderNow(root, "push-only", "prompt", &stdout, &stderr)
+		if err == nil {
+			t.Fatal("expected error for push-only tender")
+		}
+
+		expected := "tender \"push-only\" does not allow on-demand runs; enable workflow_dispatch to use 'tender run'"
 		if err.Error() != expected {
 			t.Fatalf("expected error %q, got %q", expected, err.Error())
 		}

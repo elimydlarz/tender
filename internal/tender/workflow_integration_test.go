@@ -279,6 +279,7 @@ func TestWorkflowIntegration_WorkflowContentValidation(t *testing.T) {
 			"TENDER_NAME:":                           `"comprehensive-test"`,
 			"TENDER_AGENT:":                          `"Build"`,
 			"TENDER_PROMPT:":                         `Test with special chars: \"quotes\" and 'apostrophes'`,
+			"timeout-minutes: 30":                    "should default timeout to 30 minutes",
 			"actions/checkout@v4":                    "should checkout code",
 			"curl -fsSL https://opencode.ai/install": "should install OpenCode",
 			"opencode run":                           "should run OpenCode",
@@ -307,6 +308,9 @@ func TestWorkflowIntegration_WorkflowContentValidation(t *testing.T) {
 		}
 		if parsed.Cron != tender.Cron {
 			t.Fatalf("parsed cron mismatch: expected %q, got %q", tender.Cron, parsed.Cron)
+		}
+		if parsed.TimeoutMinutes != DefaultTimeoutMinutes {
+			t.Fatalf("parsed timeout mismatch: expected %d, got %d", DefaultTimeoutMinutes, parsed.TimeoutMinutes)
 		}
 	})
 }

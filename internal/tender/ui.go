@@ -270,6 +270,17 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 	}
 	draft.Push = push
 
+	timeoutDefault := normalizeTimeoutMinutes(base.TimeoutMinutes)
+	timeoutScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
+	timeoutMinutes, err := promptTimeoutMinutes(r, timeoutScreen, timeoutDefault)
+	if err != nil {
+		if errors.Is(err, errQuitRequested) {
+			return base, false, nil
+		}
+		return Tender{}, false, err
+	}
+	draft.TimeoutMinutes = timeoutMinutes
+
 	hasScheduleDefault := isNew || strings.TrimSpace(base.Cron) != ""
 	scheduleToggleScreen := drawTenderFormScreen(w, tty, root, isNew, draft, "", true)
 	hasSchedule, err := promptBinaryChoice(r, scheduleToggleScreen, tty, "Enable recurring schedule?", hasScheduleDefault, false)
@@ -408,13 +419,14 @@ func inputTender(r *bufio.Reader, w io.Writer, root string, base Tender, isNew b
 	}
 
 	result := Tender{
-		Name:         name,
-		Agent:        strings.TrimSpace(agent),
-		Prompt:       strings.TrimSpace(base.Prompt),
-		Cron:         strings.TrimSpace(cron),
-		Manual:       true,
-		Push:         push,
-		WorkflowFile: base.WorkflowFile,
+		Name:           name,
+		Agent:          strings.TrimSpace(agent),
+		Prompt:         strings.TrimSpace(base.Prompt),
+		Cron:           strings.TrimSpace(cron),
+		Manual:         true,
+		Push:           push,
+		TimeoutMinutes: timeoutMinutes,
+		WorkflowFile:   base.WorkflowFile,
 	}
 
 	if err := ValidateTender(result); err != nil {
@@ -570,6 +582,29 @@ func promptText(r *bufio.Reader, w io.Writer, label string) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
+func promptTimeoutMinutes(r *bufio.Reader, w io.Writer, defaultTimeout int) (int, error) {
+	defaultTimeout = normalizeTimeoutMinutes(defaultTimeout)
+	for {
+		label := fmt.Sprintf("Timeout in minutes (default: %d): ", defaultTimeout)
+		raw, err := prompt(r, w, label)
+		if err != nil {
+			return 0, err
+		}
+
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return defaultTimeout, nil
+		}
+
+		minutes, err := strconv.Atoi(trimmed)
+		if err != nil || minutes <= 0 {
+			printErr(w, "Timeout must be a positive whole number of minutes.")
+			continue
+		}
+		return minutes, nil
+	}
+}
+
 func clearScreen(w io.Writer) {
 	fmt.Fprint(w, "\033[H\033[2J")
 }
@@ -682,9 +717,10 @@ func runTenderMenu(r *bufio.Reader, w io.Writer, root string, tty *os.File, name
 		drawHero(sw)
 		fmt.Fprintln(sw)
 		fmt.Fprintf(sw, "%sTender%s %s%s%s\n", colorLabel(cPink), cReset, cBold, selected.Name, cReset)
-		fmt.Fprintf(sw, "%sAgent:%s %s\n", cDim, cReset, selected.Agent)
-		fmt.Fprintf(sw, "%sTrigger:%s %s\n", cDim, cReset, paintTrigger(TriggerSummary(selected.Cron, selected.Manual, selected.Push), selected.Cron, selected.Manual, selected.Push))
-		fmt.Fprintf(sw, "%sWorkflow:%s %s\n", cDim, cReset, selected.WorkflowFile)
+		fmt.Fprintf(sw, "%s%-9s%s %s\n", cDim, "Agent:", cReset, selected.Agent)
+		fmt.Fprintf(sw, "%s%-9s%s %s\n", cDim, "Trigger:", cReset, paintTrigger(TriggerSummary(selected.Cron, selected.Manual, selected.Push), selected.Cron, selected.Manual, selected.Push))
+		fmt.Fprintf(sw, "%s%-9s%s %d min\n", cDim, "Timeout:", cReset, normalizeTimeoutMinutes(selected.TimeoutMinutes))
+		fmt.Fprintf(sw, "%s%-9s%s %s\n", cDim, "Workflow:", cReset, selected.WorkflowFile)
 		fmt.Fprintln(sw)
 		rule(sw, '.')
 		fmt.Fprintf(sw, "  %s  Back\n", numberChip(1))
