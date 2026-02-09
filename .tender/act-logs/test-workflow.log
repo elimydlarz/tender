@@ -1,6 +1,49 @@
-[tender/Test/tender] [DEBUG] evaluating expression 'success()'
-[tender/Test/tender] [DEBUG] expression 'success()' evaluated to 'true'
+[tender/Test/tender] ⭐ Run Set up job
 [tender/Test/tender] 🚀  Start image=catthehacker/ubuntu:act-latest
-[tender/Test/tender]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=true
-[tender/Test/tender] [DEBUG]   🐳  docker pull catthehacker/ubuntu:act-latest
-[tender/Test/tender] [DEBUG] pulling image 'docker.io/catthehacker/ubuntu:act-latest' (linux/amd64)
+[tender/Test/tender]   🐳  docker pull image=catthehacker/ubuntu:act-latest platform=linux/amd64 username= forcePull=false
+[tender/Test/tender]   🐳  docker create image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[tender/Test/tender]   🐳  docker run image=catthehacker/ubuntu:act-latest platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[tender/Test/tender]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[tender/Test/tender]   ✅  Success - Set up job
+[tender/Test/tender] ⭐ Run Main actions/checkout@v4
+[tender/Test/tender]   🐳  docker cp src=/Users/elimydlarz/projects/tender/. dst=/Users/elimydlarz/projects/tender
+[tender/Test/tender]   ✅  Success - Main actions/checkout@v4 [370.024833ms]
+[tender/Test/tender] ⭐ Run Main Install OpenCode
+[tender/Test/tender]   🐳  docker exec cmd=[bash --noprofile --norc -e -o pipefail /var/run/act/workflow/1.sh] user= workdir=
+[tender/Test/tender]   | [0m
+[tender/Test/tender]   | [0;2mInstalling [0mopencode [0;2mversion: [0m1.1.53[0m
+[tender/Test/tender]   | #=#=#                                                                          ##O#-#                                                                         ##O=#  #                                                                                                                                                  0.1%######                                                                     8.9%#############                                                             18.4%######################                                                    31.0%###############################                                           44.2%#########################################                                 58.3%###################################################                       71.8%#####################################################                     74.7%##############################################################            86.4%######################################################################## 100.0%
+[tender/Test/tender]   | [0m[0;2mSuccessfully added [0mopencode [0;2mto $PATH in [0m/root/.bashrc[0m
+[tender/Test/tender]   | [0mAdded /root/.opencode/bin to $GITHUB_PATH[0m
+[tender/Test/tender]   | 
+[tender/Test/tender]   | [0;2m                    [0m             ▄     
+[tender/Test/tender]   | [0;2m█▀▀█ █▀▀█ █▀▀█ █▀▀▄ [0m█▀▀▀ █▀▀█ █▀▀█ █▀▀█
+[tender/Test/tender]   | [0;2m█░░█ █░░█ █▀▀▀ █░░█ [0m█░░░ █░░█ █░░█ █▀▀▀
+[tender/Test/tender]   | [0;2m▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ [0m▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+[tender/Test/tender]   | 
+[tender/Test/tender]   | 
+[tender/Test/tender]   | [0;2mOpenCode includes free models, to start:[0m
+[tender/Test/tender]   | 
+[tender/Test/tender]   | cd <project>  [0;2m# Open directory[0m
+[tender/Test/tender]   | opencode      [0;2m# Run command[0m
+[tender/Test/tender]   | 
+[tender/Test/tender]   | [0;2mFor more information visit [0mhttps://opencode.ai/docs
+[tender/Test/tender]   | 
+[tender/Test/tender]   | 
+[tender/Test/tender]   ✅  Success - Main Install OpenCode [5.385565459s]
+[tender/Test/tender]   ⚙  ::add-path:: /root/.opencode/bin
+[tender/Test/tender]   ⚙  ::add-path:: /root/bin
+[tender/Test/tender]   ⚙  ::add-path:: /root/.local/bin
+[tender/Test/tender]   ⚙  ::add-path:: /root/.opencode/bin
+[tender/Test/tender] ⭐ Run Main Prepare main
+[tender/Test/tender]   🐳  docker exec cmd=[bash --noprofile --norc -e -o pipefail /var/run/act/workflow/2.sh] user= workdir=
+[tender/Test/tender]   | git@github.com: Permission denied (publickey).
+[tender/Test/tender]   | fatal: Could not read from remote repository.
+[tender/Test/tender]   | 
+[tender/Test/tender]   | Please make sure you have the correct access rights
+[tender/Test/tender]   | and the repository exists.
+[tender/Test/tender]   ❌  Failure - Main Prepare main [1.907397834s]
+[tender/Test/tender] exitcode '128': failure
+[tender/Test/tender] ⭐ Run Complete job
+[tender/Test/tender]   ✅  Success - Complete job
+[tender/Test/tender] 🏁  Job failed
