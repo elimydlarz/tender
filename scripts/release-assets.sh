@@ -27,28 +27,7 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 2
 fi
 
-infer_repo() {
-  local origin
-  origin="$(git remote get-url origin 2>/dev/null || true)"
-  if [[ "$origin" =~ ^git@github.com:([^/]+)/([^/]+?)(\.git)?$ ]]; then
-    echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-    return 0
-  fi
-  if [[ "$origin" =~ ^https://github.com/([^/]+)/([^/]+?)(\.git)?$ ]]; then
-    echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-    return 0
-  fi
-  return 1
-}
-
-GH_REPO="${TENDER_GITHUB_REPO:-}"
-if [[ -z "$GH_REPO" ]]; then
-  if ! GH_REPO="$(infer_repo)"; then
-    echo "error: unable to infer GitHub repo from origin remote"
-    echo "hint: set TENDER_GITHUB_REPO (for example elimydlarz/tender) and retry"
-    exit 2
-  fi
-fi
+GH_REPO="${TENDER_GITHUB_REPO:-elimydlarz/tender}"
 
 TAG="v$VERSION"
 TMPDIR="$(mktemp -d)"
