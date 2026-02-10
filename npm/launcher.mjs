@@ -33,10 +33,26 @@ process.exit(exitCode);
 
 function printHelp() {
   process.stdout.write("tender\n\n");
-  process.stdout.write("Launcher for the tender CLI.\n\n");
+  process.stdout.write("Purpose:\n");
+  process.stdout.write("  Manage autonomous OpenCode runs with GitHub Actions workflows.\n");
+  process.stdout.write("  OpenCode users only: tender reuses your existing opencode.json/.opencode setup.\n");
+  process.stdout.write("  Workflow files are the source of truth (no sidecar metadata files).\n\n");
+  process.stdout.write("Coding Agent Guide:\n");
+  process.stdout.write("  1. Inspect current tenders with `ls`.\n");
+  process.stdout.write("  2. Use `add` or `update` to define automation declaratively.\n");
+  process.stdout.write("  3. Use `run` to trigger workflow_dispatch runs immediately.\n");
+  process.stdout.write("  4. Commit generated workflow changes under .github/workflows.\n\n");
+  process.stdout.write("Use Cases:\n");
+  process.stdout.write("  - Push target test trees and run an agent that diffs target vs actual, then implements.\n");
+  process.stdout.write("  - Run a test review + improvement agent hourly in a busy trunk-based codebase.\n");
+  process.stdout.write("  - Run an intent-capture flow: inspect rough code, write formalizing tests, then reimplement TDD-style.\n\n");
+  process.stdout.write("Advice For Coding Agents:\n");
+  process.stdout.write("  After reading this guide, propose creative new tender workflows for this repo.\n");
+  process.stdout.write("  Share those ideas with the user before making major automation changes.\n\n");
   process.stdout.write("Usage:\n");
   process.stdout.write("  pnpm dlx @susu-eng/tender@latest\n");
   process.stdout.write("  npx @susu-eng/tender@latest <command>\n");
+  process.stdout.write("  npx @susu-eng/tender@latest help <command>\n");
   process.stdout.write("  npx @susu-eng/tender@latest <command> --help\n\n");
   process.stdout.write("Commands:\n");
   process.stdout.write("  init            Ensure .github/workflows exists\n");
@@ -47,7 +63,9 @@ function printHelp() {
   process.stdout.write("  rm              Remove a tender workflow\n");
   process.stdout.write("  help [command]  Show command help\n\n");
   process.stdout.write("Examples:\n");
+  process.stdout.write("  npx @susu-eng/tender@latest ls\n");
   process.stdout.write("  npx @susu-eng/tender@latest add --name nightly --agent Build --cron \"0 9 * * 1\"\n");
+  process.stdout.write("  npx @susu-eng/tender@latest run nightly --prompt \"review and commit\"\n");
   process.stdout.write("  npx @susu-eng/tender@latest help add\n");
 }
 
